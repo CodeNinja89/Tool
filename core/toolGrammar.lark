@@ -1,0 +1,104 @@
+// ==========================================
+//  BRIDGE LANGUAGE GRAMMAR (bridge.lark)
+// ==========================================
+
+start: structured_program
+
+structured_program: declarations_section preconditions_section postconditions_section program_section
+
+// --- Section Definitions ---
+declarations_section: "%% declarations" (declaration)*
+preconditions_section: "%% preconditions" (formula ";")*
+postconditions_section: "%% postconditions" (formula ";")*
+program_section: "%% program" (statement)*
+
+// --- Declarations ---
+?declaration: var_decl | const_decl | function_def | struct_def
+
+var_decl: NAME ":" type ";"
+const_decl: "const" NAME ":" type ";"
+struct_def: "struct" NAME "{" (NAME ":" type ";")+ "}"
+
+// --- Axiomatic Functions / Oracles ---
+function_def: "oracle" NAME "(" [arg_list] ")" "->" NAME ":" type "{" function_body "}"
+
+arg_list: arg ("," arg)*
+arg: NAME ":" type
+
+function_body: (function_clause)*
+
+?function_clause: "assumes" formula ";" -> func_assumes 
+                | "returns" formula ";" -> func_returns
+
+// --- Specification Statements ---
+?statement: assign_stmt | while_stmt | if_stmt | assert_stmt | block_stmt
+
+assign_stmt: lvalue ":=" expr ";"
+assert_stmt: "assert" formula ";"
+block_stmt: "{" (statement)* "}"
+
+while_stmt: "while" "(" formula ")" ["invariant" formula] ["measure" expr] block_stmt
+
+if_stmt: "if" "(" formula ")" block_stmt ["else" block_stmt]
+
+// --- Types (Cleaned: Only Int and Bool) ---
+!base_type: "int" 
+          | "bool"
+
+?type: base_type
+     | "seq" "[" type "]" -> seq_type 
+     | NAME -> user_type
+
+// --- Expressions ---
+?formula: expr 
+
+?expr: logic_or 
+     | "(" expr "?" expr ":" expr ")" -> ite_expr 
+     | quantifier
+
+?logic_or: logic_and | logic_or "||" logic_and -> logic_or_op
+?logic_and: logic_not | logic_and "&&" logic_not -> logic_and_op
+?logic_not: "!" logic_not -> not_f | comparison
+
+?comparison: bit_or 
+           | comparison "==" bit_or -> eq 
+           | comparison "!=" bit_or -> neq 
+           | comparison "<"  bit_or -> lt 
+           | comparison ">"  bit_or -> gt 
+           | comparison "<=" bit_or -> lte 
+           | comparison ">=" bit_or -> gte 
+
+?bit_or: bit_xor | bit_or "|" bit_xor -> bit_or_op
+?bit_xor: bit_and | bit_xor "^" bit_and -> bit_xor_op
+?bit_and: shift | bit_and "&" shift -> bit_and_op
+
+?shift: arith | shift "<<" arith -> shl | shift ">>" arith -> shr
+
+?arith: term | arith "+" term -> add | arith "-" term -> sub
+
+?term: factor | term "*" factor -> mul | term "/" factor -> div | term "%" factor -> mod
+
+?factor: atom | "-" factor -> neg | "~" factor -> bit_not | "<" type ">" factor -> cast_expr
+
+?atom: number | "true" -> true_lit | "false" -> false_lit | func_call | lvalue | "(" expr ")"
+
+?quantifier: "forall" NAME ":" type "." expr -> forall_f 
+           | "exists" NAME ":" type "." expr -> exists_f
+
+func_call: NAME "(" [expr_list] ")"
+expr_list: expr ("," expr)*
+
+LENGTH: "length"
+
+lvalue: NAME ( "." (NAME | LENGTH) | "[" expr "]" )*
+
+// --- Lexer Tokens (Cleaned: No type hints) ---
+LBRACE: "{"
+RBRACE: "}"
+NAME: /[a-zA-Z_][a-zA-Z0-9_]*/
+number: /[0-9]+/ 
+
+%import common.WS
+%ignore WS
+%import common.CPP_COMMENT
+%ignore CPP_COMMENT
