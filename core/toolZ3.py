@@ -384,7 +384,8 @@ class Z3Translator:
             print(f"invariant {inv_pre} does not hold upon entry!")
             print(solver.model())
             solver.pop()
-            return False
+            return False        
+        solver.pop()
         
         # verify the inductive step
         solver.push()
