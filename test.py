@@ -7,6 +7,7 @@ from core.toolSSA import SSATransformer
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import TypeChecker
 from core.toolZ3 import Z3Translator
+from core.toolAst import LoopTransition
 
 def main():
     if len(sys.argv) < 2:
@@ -62,8 +63,14 @@ def main():
         transition_formulas = ssa_engine.generate_transition_predicate(ast.specProgram)
         for formula in transition_formulas:
             z3_formula = translator.translate_expr(formula, checker)
-            solver.add(z3_formula)
-            print(f"Z3_ρ: {z3_formula}")
+            if isinstance(z3_formula, LoopTransition):
+                print("LOOP VERIFICATION!")
+                is_loop_safe = translator.verify_loop_transition(z3_formula, checker, solver)
+                if not is_loop_safe:
+                    raise Exception("Loop induction failed!")
+            else:
+                solver.add(z3_formula)
+                print(f"Z3_ρ: {z3_formula}")
 
         # 7. Postconditions
         print("\n--- [STEP 4] SSA-Aligned Postconditions ---")

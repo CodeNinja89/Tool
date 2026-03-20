@@ -168,6 +168,11 @@ class Z3Translator:
     def translate_expr(self, expr: ASTNode, tc: TypeChecker) -> z3.ExprRef:
         # recursively translate an AST expressions into a Z3 expression
 
+        if isinstance(expr, LoopTransition): # pass loop transition to the main harness. 
+            # the type: ignore comment keeps the python hinter happy
+            # we cannot use a cast here because we are passing the ASTNode directly
+            return expr # type: ignore
+
         if isinstance(expr, VarRef):
             # we use the TypeChecker to tell use what type of this SSA variable is
             if '_' in expr.name and expr.name.rsplit('_', 1)[1].isdigit():
@@ -354,3 +359,54 @@ class Z3Translator:
             return cast(z3.ExprRef, constructor(*constructor_args))
         
         raise NotImplementedError(f"Z3 translation for {type(expr)} not implemented!")
+    
+    def verify_loop_transition(self, expr: LoopTransition, tc: TypeChecker, 
+                               solver: z3.Solver) -> bool:
+        '''
+            Verifies a loop using Mathematical Induction via Z3 push/pop sandboxing.
+            Returns True if the loop is fully verified, False if an invariant fails.
+        '''
+        print("\n--- [LOOP VERIFIER] Analyzing WhileStmt ---")
+        inv_pre = self.translate_expr(expr.inv_pre, tc)
+        inv_read = self.translate_expr(expr.inv_read, tc)
+        cond_read = self.translate_expr(expr.cond_read, tc)
+        inv_write = self.translate_expr(expr.inv_write, tc)
+
+        body_formulas = []
+        for f in expr.body_formulas:
+            body_formulas.append(self.translate_expr(f, tc))
+
+        # verify if the invariant holds upon entry
+        solver.push()
+        solver.add(z3.Not(inv_pre))
+
+        if solver.check() == z3.sat:
+            print(f"invariant {inv_pre} does not hold upon entry!")
+            print(solver.model())
+            solver.pop()
+            return False
+        
+        # verify the inductive step
+        solver.push()
+        
+        # inductive assuption: The invariant and condition are true at the start of the iteration
+        solver.add(inv_read)
+        solver.add(cond_read)
+
+        for f in body_formulas: # add the loop body to the solver... essentially, execute the loop
+            solver.add(f)
+
+        solver.add(z3.Not(inv_write)) # is it mathematically possible for the invariant to be false after the iteration completes?
+
+        if solver.check() == z3.sat:
+            print("Loop body does not maintain the invariant!")
+            print(solver.model())
+            solver.pop()
+            return False
+        
+        solver.pop()
+        # inject the post-loop reality directly into the main program's timeline
+        solver.add(inv_read)          # Fact 1: The invariant holds
+        solver.add(z3.Not(cond_read)) # Fact 2: The loop condition is false
+
+        return True # placeholder to avoid red squiggles

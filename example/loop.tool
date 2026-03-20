@@ -1,20 +1,23 @@
 %% declarations
+n: int;
+sum: int;
+i: int;
 
 %% preconditions
+n == 5;
 
 %% postconditions
+// Let's add a postcondition just to test the loop exit!
+// If n=5, the sum of 0+1+2+3+4 = 10.
+sum == 10;
 
 %% program
-
-n := 5;
 sum := 0;
-i := 0;
+i := n;
 
-while (i < n) 
-  invariant sum == (i * (i - 1)) / 2
+while (i > 0) 
+  invariant sum == ((n * (n + 1) / 2) - (i * (i + 1) / 2))
 {
     sum := sum + i;
-    i := i + 1;
+    i := i - 1;
 }
-
-assert sum == (n * (n - 1)) / 2;

@@ -100,12 +100,20 @@ class SeqUpdate(Expr):
 
 @dataclass
 class LoopTransition(Expr):
-    invariant: Expr # loop invariant
-    condition: Expr # loop condition
-    measure: Optional[Expr] # loop measure
-    body_formulas: List[Expr] # the loop body as transformed formulas
-    read_scope: Dict[str, int] # variable versions at the start of the iteration
-    write_scope: Dict[str, int] # variable versions at the end of the iteration
+    pre_loop_scope: Dict[str, int] # timeline before the loop starts
+    read_scope: Dict[str, int]     # timeline at the start of the arbitrary i-th iteration
+    write_scope: Dict[str, int]    # timeline at the end of the i-th iteration
+    
+    inv_pre: Expr                  # invariant evaluated BEFORE the loop (Base Case)
+    inv_read: Expr                 # invariant evaluated at start of loop (Inductive Assumption)
+    inv_write: Expr                # invariant evaluated at end of loop (Inductive Proof)
+    
+    cond_read: Expr                # loop condition evaluated at start of loop
+    
+    measure_read: Optional[Expr]   # measure evaluated at start of loop
+    measure_write: Optional[Expr]  # measure evaluated at end of loop
+    
+    body_formulas: List[Expr]      # the mutated state transitions inside the loop
 
 @dataclass
 class Assume(ASTNode):
