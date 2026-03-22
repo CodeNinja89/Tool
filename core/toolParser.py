@@ -120,7 +120,7 @@ class CHCTransformer(Transformer):
             formula=inner_expr
         )
     
-    def exists(self, items):
+    def exists_f(self, items):
         bound_var = str(items[0])
         var_type = str(items[1])
         inner_expr = items[2]

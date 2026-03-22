@@ -37,43 +37,34 @@ def main():
         
         # 3. Initialize Translator and Solver
         translator = Z3Translator(env)
-        # Initialize Solver in test.py
         solver = z3.Solver(ctx=translator.z3_ctx)
-        
-        # 1. Macro Finder: This is the most important setting for your current error.
-        # It tells Z3 to expand the 'is_acyclic' definition directly into the code.
-        solver.set("smt.macro_finder", True)
-        solver.set("smt.mbqi", True)
-        solver.set("smt.array.extensional", False)
 
-        # 4. Oracle Axioms
-        print("\n--- [STEP 1] Oracle Axioms (SMT) ---")
-
-        # 5. SSA Engine & Preconditions
+        # 4. SSA Engine & Preconditions
         ssa_engine = SSATransformer(env)
-        print("\n--- [STEP 2] SSA-Aligned Preconditions ---")
+        print("\n--- [STEP 1] SSA-Aligned Preconditions ---")
         for pre in ast.preconditions:
             ssa_pre = ssa_engine.transform_expr(pre)
             z3_pre = translator.translate_expr(ssa_pre, checker)
             solver.add(z3_pre)
             print(f"Z3_Pre: {z3_pre}")
 
-        # 6. Program Transitions
-        print("\n--- [STEP 3] SSA Program Formulas ---")
+        # 5. Program Transitions (Macro Inlining happens automatically here!)
+        print("\n--- [STEP 2] SSA Program Formulas ---")
         transition_formulas = ssa_engine.generate_transition_predicate(ast.specProgram)
         for formula in transition_formulas:
             z3_formula = translator.translate_expr(formula, checker)
             if isinstance(z3_formula, LoopTransition):
-                print("LOOP VERIFICATION!")
+                print("\n--- [LOOP VERIFIER] Analyzing WhileStmt ---")
                 is_loop_safe = translator.verify_loop_transition(z3_formula, checker, solver)
                 if not is_loop_safe:
-                    raise Exception("Loop induction failed!")
+                    print("❌ Verification Aborted: Loop induction failed.")
+                    exit(1)
             else:
                 solver.add(z3_formula)
                 print(f"Z3_ρ: {z3_formula}")
 
-        # 7. Postconditions
-        print("\n--- [STEP 4] SSA-Aligned Postconditions ---")
+        # 6. Postconditions (Macro Inlining happens here too!)
+        print("\n--- [STEP 3] SSA-Aligned Postconditions ---")
         for post in ast.postconditions:
             ssa_post = ssa_engine.transform_expr(post)
             z3_post = translator.translate_expr(ssa_post, checker)
@@ -81,19 +72,17 @@ def main():
             solver.add(z3.Not(z3_post))
             print(f"Z3_Post (Asserted as Not): {z3.Not(z3_post)}")
 
-        # 8. Final Check
+        # 7. Final Check
         print("\n--- [DEBUG] SOLVER STATE ---")
-        # 1. Print all formulas currently in the solver to check for version mismatches
+        if hasattr(translator, 'side_loaded_contracts'):
+            for contract in translator.side_loaded_contracts:
+                solver.add(contract)
+                print(f"Z3_Oracle_Contract: {contract}")
+        
         for a in solver.assertions():
             print(f"Assertion: {a}")
 
-        # 2. Check if the Axiom specifically has the correct Triggers (Patterns)
-        # We search the assertions for the ForAll quantifier
-        for a in solver.assertions():
-            if z3.is_quantifier(a):
-                # We use repr to see the internal Z3 structure, including {pattern}
-                print(f"\n[Axiom Structure]: {repr(a)}")
-                print("\n--- [STEP 5] Final Verdict ---")
+        print("\n--- [STEP 4] Final Verdict ---")
         result = solver.check()
         
         if result == z3.unsat:

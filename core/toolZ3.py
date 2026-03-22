@@ -3,6 +3,7 @@ from typing import Dict, Any, cast
 from core.toolAst import *
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import *
+from core.toolOracles import OracleManager
 
 class Z3Translator:
     def __init__(self, env: TypeEnvironment):
@@ -13,69 +14,7 @@ class Z3Translator:
         self.func_cache: Dict[str, z3.FuncDeclRef] = {}
 
         self._register_structs() # register user-defined structs before anything else.
-
-    """ def generate_oracle_axioms(self, tc: TypeChecker) -> list[z3.ExprRef]:
-        axioms = []
-
-        for oracle_name, oracle_def in self.env.oracles.items():
-            z3_args = []
-            old_vars = {}
-            
-            # 1. Create true "Local" Quantified Variables for the arguments
-            # We do NOT version these with _0 because they are placeholders.
-            for arg in oracle_def.args:
-                old_vars[arg.name] = self.env.variables.get(arg.name)
-                self.env.variables[arg.name] = arg.typeName
-                # We create a fresh Z3 constant that will be quantified
-                z3_args.append(self.get_z3_var(arg.name, arg.typeName))
-
-            # 2. Setup the return variable
-            old_vars[oracle_def.retName] = self.env.variables.get(oracle_def.retName)
-            self.env.variables[oracle_def.retName] = oracle_def.retType
-            ret_var_z3 = self.get_z3_var(oracle_def.retName, oracle_def.retType)
-
-            # 3. Define the Function Signature
-            if oracle_name not in self.func_cache:
-                domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
-                range_sort = self.get_z3_sort(oracle_def.retType)
-                self.func_cache[oracle_name] = z3.Function(oracle_name, *domain_sorts, range_sort)
-
-            oracle_func = self.func_cache[oracle_name]
-            oracle_call_z3 = oracle_func(*z3_args)
-
-            # 4. Translate the body (this uses the local args we just injected)
-            assumes_z3 = z3.BoolVal(True, ctx=self.z3_ctx)
-            returns_z3 = z3.BoolVal(True, ctx=self.z3_ctx)
-
-            for clause in oracle_def.clauses:
-                if isinstance(clause, Assume):
-                    assumes_z3 = self.translate_expr(clause.formula, tc)
-                elif isinstance(clause, Returns):
-                    returns_z3 = self.translate_expr(clause.formula, tc)
-                    # Bind the return name to the function call
-                    returns_z3 = z3.substitute(returns_z3, (ret_var_z3, oracle_call_z3))
-
-            # 5. Build the Universal Axiom
-            # "For all sequences S: assumes(S) => (is_acyclic(S) == logic(S))"
-            axiom_body = z3.Implies(assumes_z3, returns_z3)
-            
-            # Important: find patterns using the local arguments
-            found_patterns = self._find_patterns(returns_z3, z3_args)
-            z3_patterns = [[p] for p in found_patterns]
-
-            # We wrap the whole thing in a ForAll over the arguments
-            axiom = z3.ForAll(z3_args, axiom_body, patterns=z3_patterns)
-            axioms.append(axiom)
-
-            # 6. Cleanup
-            for arg in oracle_def.args + [VarDecl(oracle_def.retName, oracle_def.retType)]:
-                if old_vars.get(arg.name) is not None:
-                    self.env.variables[arg.name] = old_vars[arg.name]
-                else:
-                    if arg.name in self.env.variables: del self.env.variables[arg.name]
-                if arg.name in self.var_cache: del self.var_cache[arg.name]
-
-        return axioms """
+        self.oracle_manager = OracleManager(self.env)
 
     def get_z3_sort(self, type_name: str) -> z3.SortRef:
         # get the Z3 SMT sort from a Tool type
@@ -298,14 +237,40 @@ class Z3Translator:
 
         elif isinstance(expr, FuncCall):
             z3_args = [self.translate_expr(arg, tc) for arg in expr.args]
+            
+            oracle_def = self.env.get_oracles(expr.name)
             if expr.name not in self.func_cache:
-                oracle_def = self.env.get_oracles(expr.name)
                 domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
                 range_sort = self.get_z3_sort(oracle_def.retType)
                 self.func_cache[expr.name] = z3.Function(expr.name, *domain_sorts, range_sort)
-
+                
             z3_func = self.func_cache[expr.name]
-            return cast(z3.ExprRef, z3_func(*z3_args))
+            z3_call = z3_func(*z3_args)
+            
+            # Initialize our side-loading storage if it doesn't exist yet
+            if not hasattr(self, 'instantiated_macros'):
+                self.instantiated_macros = set()
+                self.side_loaded_contracts = []
+                
+            # Use the Z3 string representation as a unique cache key (e.g., "is_acyclic(footprint_1)")
+            call_sig = str(z3_call)
+            
+            # If we haven't generated the contract for these exact arguments yet:
+            if call_sig not in self.instantiated_macros:
+                # 1. CACHE IT FIRST! This breaks the infinite recursion.
+                self.instantiated_macros.add(call_sig) 
+                
+                # 2. Ask the manager for the Find-and-Replace AST
+                grounded_ast = self.oracle_manager.inline_oracle(expr)
+                
+                # 3. Translate the math. When it recursively hits the inner FuncCall, 
+                # the cache will catch it and it will just safely return z3_call!
+                z3_contract = self.translate_expr(grounded_ast, tc)
+                
+                # 4. Save the completed contract to be injected into the solver later
+                self.side_loaded_contracts.append(z3_contract)
+                
+            return cast(z3.ExprRef, z3_call)
         
         elif isinstance(expr, FieldAccess):
             obj_z3 = self.translate_expr(expr.obj, tc)
