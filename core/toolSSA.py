@@ -7,6 +7,7 @@ class SSATransformer:
         self.max_versions: Dict[str, int] = {} # max version ever given to a variable (never rewinds)
         self.current_versions: Dict[str, int] = {} # current scope versions (rewinds on branches)
         self.env = env # set the universe
+        self.bound_vars = set()
 
     def _get_current_name(self, name: str) -> str:
         # reads the current version of a variable for the RHS
@@ -51,6 +52,8 @@ class SSATransformer:
         # recursively update variable references in expressions to
         # their SSA versions
         if isinstance(node, VarRef):
+            if node.name in self.bound_vars:
+                return node
             return VarRef(self._get_current_name(node.name))
         
         elif isinstance(node, Literal):
@@ -67,6 +70,23 @@ class SSATransformer:
             return UnaryExpr(
                 op=node.op,
                 operand=self.transform_expr(node.operand)
+            )
+        
+        elif isinstance(node, Quantifier):
+            # 1. Register the bound variable so it doesn't get SSA versioned
+            self.bound_vars.add(node.bound_var)
+            
+            # 2. Recursively transform the inner formula
+            inner_transformed = self.transform_expr(node.formula)
+            
+            # 3. Clean up the bound variable
+            self.bound_vars.remove(node.bound_var)
+            
+            return Quantifier(
+                quant_type=node.quant_type,
+                bound_var=node.bound_var,
+                var_type=node.var_type,
+                formula=inner_transformed
             )
         
         elif isinstance(node, FuncCall):
