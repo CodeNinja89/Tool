@@ -7,6 +7,8 @@ struct ListNode {
 is_safe: bool;
 footprint: seq[ListNode]; // <-- The footprint is a global sequence of memory
 
+null_ListNode: ListNode;
+
 oracle is_acyclic(ghostFootprint: seq[ListNode]) -> acyclic: bool {
     assumes ghostFootprint.length > 0;
     returns acyclic == (
@@ -17,17 +19,31 @@ oracle is_acyclic(ghostFootprint: seq[ListNode]) -> acyclic: bool {
     );
 }
 
+oracle terminates(ghostFootprint: seq[ListNode], null: ListNode) -> ok: bool {
+    assumes (ghostFootprint.length > 0 && 
+        is_acyclic(ghostFootprint) == true);
+    returns ok == (
+        (forall i: int .
+            !(
+                (i >= 0) &&
+                (i + 1 < ghostFootprint.length)
+            )
+            ||
+            (ghostFootprint[i].next == ghostFootprint[i + 1])
+        )
+
+        &&
+
+        (ghostFootprint[ghostFootprint.length - 1].next == null)
+    );
+}
+
 %% preconditions
 footprint.length > 0;
-
-exists i: int . exists j: int . 
-    (i >= 0 && i < footprint.length) && 
-    (j >= 0 && j < footprint.length) && 
-    (i != j) && 
-    (footprint[i] == footprint[j]); // force a collision
+is_acyclic(footprint) == true;
+terminates(footprint, null_ListNode) == true;
 
 %% postconditions
-is_safe == true; // assert something wrong. in this case, we check if the list is acyclic. This is a contradiction because in the preconditions we explicitly forced a collision.
+is_safe == true;
 %% program
-
 is_safe := is_acyclic(footprint);

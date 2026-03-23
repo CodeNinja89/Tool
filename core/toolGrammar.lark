@@ -1,5 +1,5 @@
 // ==========================================
-//  BRIDGE LANGUAGE GRAMMAR (bridge.lark)
+//  The Oracle Oriented Language (TOOL)
 // ==========================================
 
 start: structured_program
@@ -80,7 +80,7 @@ if_stmt: "if" "(" formula ")" block_stmt ["else" block_stmt]
 
 ?factor: atom | "-" factor -> neg | "~" factor -> bit_not | "<" type ">" factor -> cast_expr
 
-?atom: number | "true" -> true_lit | "false" -> false_lit | func_call | lvalue | "(" expr ")"
+?atom: number | "true" -> true_lit | "false" -> false_lit | "null" -> null_lit | func_call | lvalue | "(" expr ")"
 
 ?quantifier: "forall" NAME ":" type "." expr -> forall_f 
            | "exists" NAME ":" type "." expr -> exists_f

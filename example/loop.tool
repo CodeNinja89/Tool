@@ -8,7 +8,7 @@ n == 5;
 
 %% postconditions
 // Let's add a postcondition just to test the loop exit!
-// If n=5, the sum of 0+1+2+3+4 = 10.
+// If n=5, the sum of 0+1+2+3+4+5 = 15.
 sum == 15;
 
 %% program

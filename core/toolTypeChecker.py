@@ -21,6 +21,7 @@ class TypeChecker:
         elif isinstance(expr, Literal):
             if expr.value in ["true", "false"]:
                 return "bool"
+            if expr.value == "null": return "null" # wildcard type
             return "int" # fallback for mathematical integers
         
         elif isinstance(expr, BinaryExpr):
@@ -35,6 +36,8 @@ class TypeChecker:
             
             # relational operators
             if expr.op in ['==', '!=']:
+                if left_type == "null" and right_type in self.env.structs: return "bool"
+                if right_type == "null" and left_type in self.env.structs: return "bool"
                 if left_type != right_type:
                     raise Exception(f"Type Error: Cannot compare '{left_type}' and '{right_type}")
                 return "bool"

@@ -132,8 +132,26 @@ class Z3Translator:
                 return z3.IntVal(int(expr.value), ctx=self.z3_ctx)
                 
         elif isinstance(expr, BinaryExpr):
-            left_z3 = self.translate_expr(expr.left, tc)
-            right_z3 = self.translate_expr(expr.right, tc)
+            left_is_null = isinstance(expr.left, Literal) and expr.left.value == "null"
+            right_is_null = isinstance(expr.right, Literal) and expr.right.value == "null"
+
+            if left_is_null and not right_is_null:
+                right_type = tc.get_expr_type(expr.right)
+                z3_sort = self.get_z3_sort(right_type)
+                null_cons = getattr(z3_sort, f"null_{right_type}")
+                left_z3 = cast(z3.ExprRef, null_cons())
+                right_z3 = self.translate_expr(expr.right, tc)
+
+            elif right_is_null and not left_is_null:
+                left_type = tc.get_expr_type(expr.left)
+                z3_sort = self.get_z3_sort(left_type)
+                null_constructor = getattr(z3_sort, f"null_{left_type}")
+                right_z3 = cast(z3.ExprRef, null_constructor)
+                left_z3 = self.translate_expr(expr.left, tc)
+                
+            else:
+                left_z3 = self.translate_expr(expr.left, tc)
+                right_z3 = self.translate_expr(expr.right, tc)
 
             if expr.op == '&&': 
                 return cast(z3.ExprRef, z3.And(left_z3, right_z3))
@@ -236,9 +254,19 @@ class Z3Translator:
             return cast(z3.ExprRef, z3.Store(seq_z3, idx_z3, val_z3))
 
         elif isinstance(expr, FuncCall):
-            z3_args = [self.translate_expr(arg, tc) for arg in expr.args]
-            
             oracle_def = self.env.get_oracles(expr.name)
+
+            z3_args = []
+            for i, arg in enumerate(expr.args):
+                if isinstance(arg, Literal) and arg.value == "null":
+                    # Look up the expected type from the Oracle's mathematical definition
+                    expected_type = oracle_def.args[i].typeName
+                    z3_sort = self.get_z3_sort(expected_type)
+                    null_constructor = getattr(z3_sort, f"null_{expected_type}")
+                    z3_args.append(cast(z3.ExprRef, null_constructor))
+                else:
+                    z3_args.append(self.translate_expr(arg, tc))
+            
             if expr.name not in self.func_cache:
                 domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
                 range_sort = self.get_z3_sort(oracle_def.retType)

@@ -162,6 +162,9 @@ class CHCTransformer(Transformer):
                 current_expr = FieldAccess(obj=current_expr, field=str(modifier))
         return current_expr
     
+    def null_lit(self, items):
+        return Literal("null")
+    
     def func_call(self, items):
         name = str(items[0])
         args = items[1] if len(items) > 1 and items[1] is not None else []
