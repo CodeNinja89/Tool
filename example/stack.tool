@@ -41,7 +41,7 @@ is_correct: bool;
 // No preconditions are needed. Z3 will prove this holds for infinity!
 
 %% postconditions
-is_correct == false;
+is_correct == false; // let's verify a contradiction. If this is proven, then there's something gravely wrong.
 
 %% program
 
