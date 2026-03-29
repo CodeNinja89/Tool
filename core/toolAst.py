@@ -116,6 +116,10 @@ class LoopTransition(Expr):
     body_formulas: List[Expr]      # the mutated state transitions inside the loop
 
 @dataclass
+class CallSiteCheck:
+    formula: 'Expr'
+
+@dataclass
 class Assume(ASTNode):
     formula: Expr
 

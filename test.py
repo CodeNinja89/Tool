@@ -7,7 +7,7 @@ from core.toolSSA import SSATransformer
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import TypeChecker
 from core.toolZ3 import Z3Translator
-from core.toolAst import LoopTransition
+from core.toolAst import LoopTransition, CallSiteCheck
 
 def main():
     if len(sys.argv) < 2:
@@ -48,18 +48,43 @@ def main():
             solver.add(z3_pre)
             print(f"Z3_Pre: {z3_pre}")
 
-        # 5. Program Transitions (Macro Inlining happens automatically here!)
+        # 5. Program Transitions
         print("\n--- [STEP 2] SSA Program Formulas ---")
-        transition_formulas = ssa_engine.generate_transition_predicate(ast.specProgram)
-        for formula in transition_formulas:
-            z3_formula = translator.translate_expr(formula, checker)
-            if isinstance(z3_formula, LoopTransition):
+        transition_items = ssa_engine.generate_transition_predicate(ast.specProgram)
+        
+        for item in transition_items:
+            # 1. Check if it's a Loop Wrapper
+            if isinstance(item, LoopTransition):
                 print("\n--- [LOOP VERIFIER] Analyzing WhileStmt ---")
-                is_loop_safe = translator.verify_loop_transition(z3_formula, checker, solver)
+                is_loop_safe = translator.verify_loop_transition(item, checker, solver)
                 if not is_loop_safe:
                     print("❌ Verification Aborted: Loop induction failed.")
                     exit(1)
+            
+            # 2. Check if it's our new CallSiteCheck Wrapper
+            elif isinstance(item, CallSiteCheck):
+                # Notice we translate 'item.formula' here, not 'item'
+                z3_formula = translator.translate_expr(item.formula, checker)
+                
+                print(f"\n[PROVING CALL-SITE CHECK]: {z3_formula}")
+                solver.push()
+                solver.add(z3.Not(z3_formula))
+
+                if solver.check() == z3.sat:
+                    print("❌ VERDICT: INVALID (Precondition Violated at Call Site!)")
+                    print("\n--- Counter-Example Model ---")
+                    print(solver.model())
+                    exit(1)
+
+                solver.pop()
+                print("✅ Call-Site Check Passed!")
+                
+                # After proving it, add it to the timeline so Z3 can use it as a fact!
+                solver.add(z3_formula)
+                
+            # 3. Otherwise, it's a normal AST formula (Assignments, Frame Axioms)
             else:
+                z3_formula = translator.translate_expr(item, checker)
                 solver.add(z3_formula)
                 print(f"Z3_ρ: {z3_formula}")
 
@@ -74,10 +99,10 @@ def main():
 
         # 7. Final Check
         print("\n--- [DEBUG] SOLVER STATE ---")
-        if hasattr(translator, 'side_loaded_contracts'):
+        """ if hasattr(translator, 'side_loaded_contracts'):
             for contract in translator.side_loaded_contracts:
                 solver.add(contract)
-                print(f"Z3_Oracle_Contract: {contract}")
+                print(f"Z3_Oracle_Contract: {contract}") """
         
         for a in solver.assertions():
             print(f"Assertion: {a}")

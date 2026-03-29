@@ -1,6 +1,7 @@
 from core.toolAst import *
 from core.toolTypes import *
 from typing import Dict, Any, cast
+from core.toolOracles import OracleManager
 
 class SSATransformer:
     def __init__(self, env: TypeEnvironment):
@@ -8,6 +9,7 @@ class SSATransformer:
         self.current_versions: Dict[str, int] = {} # current scope versions (rewinds on branches)
         self.env = env # set the universe
         self.bound_vars = set()
+        self.oracle_manager = OracleManager(self.env)
 
     def _get_current_name(self, name: str) -> str:
         # reads the current version of a variable for the RHS
@@ -121,6 +123,16 @@ class SSATransformer:
         formulas = []
 
         if isinstance(node, AssignStmt):
+            if isinstance(node.expr, FuncCall) and node.expr.name in self.env.oracles:
+                grounded_assumes, grounded_returns = self.oracle_manager.extract_contract(node.expr)
+                if grounded_assumes:
+                    ssa_assumes = self.transform_expr(grounded_assumes)
+                    formulas.append(CallSiteCheck(ssa_assumes))
+
+                if grounded_returns:
+                    ssa_returns = self.transform_expr(grounded_returns)
+                    formulas.append(ssa_returns)
+
             # transform RHS
             rhs_transformed = self.transform_expr(node.expr)
             

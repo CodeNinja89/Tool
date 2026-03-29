@@ -5,6 +5,7 @@
 // and EVERY other index 'i' is mathematically identical to the old sequence.
 
 oracle enqueue(old_mem: seq[int], t: int, element: int) -> new_mem: seq[int] {
+    assumes t >= 0; // the write pointer must be positive
     returns (new_mem[t] == element) && 
             (forall i: int . (i == t) || (new_mem[i] == old_mem[i])) &&
             (new_mem.length == old_mem.length + 1);
@@ -13,7 +14,10 @@ oracle enqueue(old_mem: seq[int], t: int, element: int) -> new_mem: seq[int] {
 // 2. The Dequeue Contract
 // Dequeuing simply reads the value at the current 'h' index.
 oracle dequeue(mem: seq[int], h: int, t: int) -> val: int {
-    assumes mem.length > 0;
+    // the read pointer must not be negative and is strictly less than the write pointer.
+    // h == t indicates that the queue is empty
+
+    assumes (h >= 0) && (h < t);
     returns val == mem[h];
 }
 
@@ -49,23 +53,19 @@ head <= tail;
 temp_mem1 := enqueue(mem, tail, x);
 tail := tail + 1;
 
-assert temp_mem2.length > 0;
-
 // 2. Enqueue 'y' and increment the tail pointer again
 temp_mem2 := enqueue(temp_mem1, tail, y);
 tail := tail + 1;
 
-assert temp_mem2.length > 0;
-
 // 3. Dequeue the first element and increment the head pointer
-val1 := dequeue(temp_mem2, head);
+val1 := dequeue(temp_mem2, head, tail);
 head := head + 1;
 
 // 4. Dequeue the second element
-val2 := dequeue(temp_mem2, head);
+val2 := dequeue(temp_mem2, head, tail);
 head := head + 1;
 
-val3 := dequeue(temp_mem2, head);
+val3 := dequeue(temp_mem2, head, tail);
 head := head + 1;
 
 // 5. Verify the FIFO property: Did they come out in the exact order they went in?

@@ -275,7 +275,7 @@ class Z3Translator:
             z3_func = self.func_cache[expr.name]
             z3_call = z3_func(*z3_args)
             
-            # Initialize our side-loading storage if it doesn't exist yet
+            """ # Initialize our side-loading storage if it doesn't exist yet
             if not hasattr(self, 'instantiated_macros'):
                 self.instantiated_macros = set()
                 self.side_loaded_contracts = []
@@ -296,7 +296,7 @@ class Z3Translator:
                 z3_contract = self.translate_expr(grounded_ast, tc)
                 
                 # 4. Save the completed contract to be injected into the solver later
-                self.side_loaded_contracts.append(z3_contract)
+                self.side_loaded_contracts.append(z3_contract) """
                 
             return cast(z3.ExprRef, z3_call)
         
