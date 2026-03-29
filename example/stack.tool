@@ -6,6 +6,7 @@ struct Stack {
 
 // 1. The Push Contract
 // Pushing an element creates a stack where 'val' is the element, and 'next' is the old stack.
+
 oracle push(old_stack: Stack, element: int) -> new_stack: Stack {
     // A pushed stack is NEVER null, and its fields match the inputs
     returns (new_stack != null) && (new_stack.val == element) && (new_stack.next == old_stack);
@@ -20,6 +21,7 @@ oracle pop_val(s: Stack) -> v: int {
 
 // 3. The Pop (State) Contract
 // Popping also returns the rest of the stack underneath.
+
 oracle pop_next(s: Stack) -> rest: Stack {
     assumes s != null;
     returns rest == s.next;
@@ -38,9 +40,15 @@ is_correct: bool;
 
 %% preconditions
 // We start with ANY arbitrary stack and ANY arbitrary integer 'x'.
-// No preconditions are needed. Z3 will prove this holds for infinity!
+// No preconditions are needed.
 
 %% postconditions
+
+// we deliberately try to verify a contradiction
+// 1. if the solver returns UNSAT => the framework is broken. we verified a contradiction
+// 2. if the solver returns SAT => the solver generates a counterexample and we know that the framework discharges correct VCs
+// 3. if the solver times out => either the VCs are too complicated or we need to help the solver with some assertions.
+
 is_correct == false;
 
 %% program

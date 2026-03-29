@@ -185,7 +185,7 @@ class Z3Translator:
             if expr.op == '/': 
                 return cast(z3.ExprRef, (l_dyn / r_dyn))
             if expr.op == '%': 
-                return cast(z3.ExprRef, (l_dyn % r_dyn))            
+                return cast(z3.ExprRef, (l_dyn % r_dyn))
             raise NotImplementedError(f"Cannot convert {expr.op} to Z3")
         
         elif isinstance(expr, Quantifier):
