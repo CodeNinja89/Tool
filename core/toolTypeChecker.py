@@ -67,6 +67,23 @@ class TypeChecker:
                 return operand_type
             
         elif isinstance(expr, FuncCall):
+            # --- NEW: Intercept implicitly generated struct constructors ---
+            if expr.name.startswith("mk_") and expr.name[3:] in self.env.structs:
+                struct_name = expr.name[3:]
+                struct_fields = list(self.env.get_struct_fields(struct_name).values())
+                
+                if len(expr.args) != len(struct_fields):
+                    raise Exception(f"Constructor {expr.name} expects {len(struct_fields)} args, got {len(expr.args)}")
+                    
+                for i, arg_expr in enumerate(expr.args):
+                    arg_type = self.get_expr_type(arg_expr)
+                    expected_type = struct_fields[i]
+                    # 'null' can technically inhabit any struct type pointer
+                    if arg_type != "null" and arg_type != expected_type:
+                        raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
+                
+                return struct_name # A constructor returns an instance of the struct!
+            
             oracle = self.env.get_oracles(expr.name)
             if len(expr.args) != len(oracle.args):
                 raise Exception(f"Oracle {expr.name} expects {len(oracle.args)} but got {len(expr.args)}")

@@ -78,60 +78,35 @@ class OracleManager:
     def __init__(self, env: TypeEnvironment) -> None:
         self.env = env
 
-    """ def inline_oracle(self, func_call: FuncCall):
-        oracle_name = func_call.name
-
-        # look up the oracle definition
-        if oracle_name not in self.env.oracles:
-            raise Exception(f"Oralce {oracle_name} is not defined!")
-        oracle_def = self.env.oracles[oracle_name]
-
-        # check the number of arguments
-        if len(func_call.args) != len(oracle_def.args):
-            raise Exception(f"{oracle_name} expects {len(func_call.args)} arguments!")
+    def is_recursive(self, oracle_def: FunctionDef) -> bool:
+        """Walk the AST and detect if this is a self-recursion"""
+        def check_node(node: ASTNode) -> bool:
+            if isinstance(node, FuncCall):
+                if node.name == oracle_def.name:
+                    return True
+                return any(check_node(arg) for arg in node.args)
+            elif isinstance(node, BinaryExpr):
+                return check_node(node.left) or check_node(node.right)
+            elif isinstance(node, UnaryExpr):
+                return check_node(node.operand)
+            elif isinstance(node, TernaryExpr):
+                return check_node(node.condition) or check_node(node.true_expr) or check_node(node.false_expr)
+            elif isinstance(node, Quantifier):
+                return check_node(node.formula)
+            elif isinstance(node, FieldAccess):
+                return check_node(node.obj)
+            elif isinstance(node, SeqAccess):
+                return check_node(node.seq_obj) or check_node(node.index)
+            return False
         
-        sub_map: Dict[str, Expr] = {} # the substitution map
-
-        # Map formal parameters to the concrete arguments
-        # e.g., "seq" -> VarRef("footprint_1")
-        for i, formal_arg in enumerate(oracle_def.args):
-            sub_map[formal_arg.name] = func_call.args[i]
-
-        # Map the return variable to the actual function call
-        # e.g., "res" -> FuncCall("is_acyclic", [VarRef("footprint_1")])
-        sub_map[oracle_def.retName] = func_call
-
-        # 4. Extract the assumes and returns clauses
-        assumes_expr: Optional[Expr] = None
-        returns_expr: Optional[Expr] = None
-
         for clause in oracle_def.clauses:
             if isinstance(clause, Assume):
-                assumes_expr = clause.formula
+                if check_node(clause.formula): return True
+
             elif isinstance(clause, Returns):
-                returns_expr = clause.formula
+                if check_node(clause.formula): return True
 
-        # An oracle MUST have a returns clause to be mathematically useful
-        if not returns_expr:
-            raise Exception(f"OracleManager Error: Oracle '{oracle_name}' is missing a 'returns' clause.")
-
-        # 5. Run the substitutions
-        substitutor = ASTSubstitutor(sub_map)
-        
-        grounded_returns = substitutor.substitute(returns_expr)
-        
-        if assumes_expr:
-            grounded_assumes = substitutor.substitute(assumes_expr)
-            # If there's an assumption, the contract is: Assumes => Returns
-            # In boolean logic: A => B is exactly the same as !A || B
-            return BinaryExpr(
-                left=UnaryExpr(op='!', operand=grounded_assumes),
-                op='||',
-                right=grounded_returns
-            )
-        else:
-            # If there are no assumptions, the returns clause is universally true
-            return grounded_returns """
+        return False
         
     def extract_contract(self, func_call: FuncCall) -> tuple[Optional[Expr], Expr]:
         oracle_name = func_call.name

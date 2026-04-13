@@ -52,8 +52,8 @@ if_stmt: "if" "(" formula ")" block_stmt ["else" block_stmt]
 // --- Expressions ---
 ?formula: expr 
 
-?expr: logic_or 
-     | "(" expr "?" expr ":" expr ")" -> ite_expr 
+?expr: logic_or "?" expr ":" expr -> ite_expr
+     | logic_or
      | quantifier
 
 ?logic_or: logic_and | logic_or "||" logic_and -> logic_or_op

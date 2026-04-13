@@ -12,9 +12,9 @@ oracle push(old_stack: Stack, element: int) -> new_stack: Stack {
     returns (new_stack != null) && (new_stack.val == element) && (new_stack.next == old_stack);
 }
 
-// 2. The Pop (Value) Contract
+// 2. The Peek (Value) Contract
 // Popping returns the value at the top of the stack.
-oracle pop_val(s: Stack) -> v: int {
+oracle peek(s: Stack) -> v: int {
     assumes s != null;
     returns v == s.val;
 }
@@ -22,7 +22,7 @@ oracle pop_val(s: Stack) -> v: int {
 // 3. The Pop (State) Contract
 // Popping also returns the rest of the stack underneath.
 
-oracle pop_next(s: Stack) -> rest: Stack {
+oracle pop(s: Stack) -> rest: Stack {
     assumes s != null;
     returns rest == s.next;
 }
@@ -57,8 +57,8 @@ is_correct == false;
 temp_stack := push(original_stack, x);
 
 // 2. Pop the value and the rest of the stack
-popped_val := pop_val(temp_stack);
-final_stack := pop_next(temp_stack);
+popped_val := peek(temp_stack);
+final_stack := pop(temp_stack);
 
 // 3. Verify the LIFO property: 
 // Did we get 'x' back? Is the stack exactly the same as when we started?

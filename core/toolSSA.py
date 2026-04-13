@@ -124,14 +124,17 @@ class SSATransformer:
 
         if isinstance(node, AssignStmt):
             if isinstance(node.expr, FuncCall) and node.expr.name in self.env.oracles:
+                oracle_def = self.env.get_oracles(node.expr.name)
+                
                 grounded_assumes, grounded_returns = self.oracle_manager.extract_contract(node.expr)
                 if grounded_assumes:
                     ssa_assumes = self.transform_expr(grounded_assumes)
                     formulas.append(CallSiteCheck(ssa_assumes))
 
-                if grounded_returns:
-                    ssa_returns = self.transform_expr(grounded_returns)
-                    formulas.append(ssa_returns)
+                if not self.oracle_manager.is_recursive(oracle_def):
+                    if grounded_returns:
+                        ssa_returns = self.transform_expr(grounded_returns)
+                        formulas.append(ssa_returns)
 
             # transform RHS
             rhs_transformed = self.transform_expr(node.expr)

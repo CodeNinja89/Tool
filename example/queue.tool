@@ -29,9 +29,6 @@ tail: int;
 x: int;
 y: int;
 
-temp_mem1: seq[int];
-temp_mem2: seq[int];
-
 val1: int;
 val2: int;
 val3: int;
@@ -50,22 +47,24 @@ head <= tail;
 %% program
 
 // 1. Enqueue 'x' and manually increment the tail pointer
-temp_mem1 := enqueue(mem, tail, x);
+mem := enqueue(mem, tail, x);
 tail := tail + 1;
 
 // 2. Enqueue 'y' and increment the tail pointer again
-temp_mem2 := enqueue(temp_mem1, tail, y);
+mem := enqueue(mem, tail, y);
 tail := tail + 1;
 
 // 3. Dequeue the first element and increment the head pointer
-val1 := dequeue(temp_mem2, head, tail);
+val1 := dequeue(mem, head, tail);
 head := head + 1;
 
 // 4. Dequeue the second element
-val2 := dequeue(temp_mem2, head, tail);
+val2 := dequeue(mem, head, tail);
 head := head + 1;
 
-val3 := dequeue(temp_mem2, head, tail);
+// let's try to dequeue one more element. This should fail.
+
+val3 := dequeue(mem, head, tail);
 head := head + 1;
 
 // 5. Verify the FIFO property: Did they come out in the exact order they went in?
