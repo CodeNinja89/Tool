@@ -1,0 +1,141 @@
+=============================================================================
+FORMAL SPECIFICATION HISTORY: INTER-CORE RING BUFFER PROTOCOL
+=============================================================================
+
+This document tracks the iterative refinement of the 'TOOL' specification for
+the inter-core ring-buffer communication protocol.
+
+-----------------------------------------------------------------------------
+STEP 1: INITIAL PROBLEM STATEMENT
+-----------------------------------------------------------------------------
+
+USER QUERY:
+I'm trying to write specifications in Tool for a inter-core ring-buffer based 
+communication protocol. Every core has its private ring buffer. Each ring buffer 
+is implemented as an array. There are two pointers, the head pointer and the 
+tail pointer. These are indices in the ring buffer. The sender enqueues a 
+message at the tail and the receiver reads the message from the head. We will 
+start with the sender function. The sender spins until there is space in the 
+receiver's ring buffer. When there's space, it atomically enqueues the message 
+at the current tail index and then increments the tail index according to ring 
+buffer semantics (wrap-around behavior). I want you to write a candidate 
+specification that we will refine.
+
+AGENT RESPONSE:
+Created 'Tool/example/ringBuffer_protocol.tool'.
+- Defined 'buffer: seq[int]', 'head', 'tail', and 'capacity'.
+- Introduced 'next_idx' oracle for modulo arithmetic.
+- Introduced 'write_mem' oracle for sequence updates.
+- Implemented a 'while' loop for the spin-wait logic.
+- Set postconditions to verify message delivery and tail advancement.
+
+-----------------------------------------------------------------------------
+STEP 2: REFINEMENT WITH DATA STRUCTURES
+-----------------------------------------------------------------------------
+
+USER QUERY:
+Now, some refinements. Try to use these struct definitions, please:
+struct message {
+    toCore: int,
+    fromCore: int,
+    opcode: int,
+    result: seq[int],
+    params: seq[int]
+};
+
+struct messageQ {
+    messages: seq[message],
+    tail: int,
+    head: int
+};
+
+AGENT RESPONSE:
+Updated the specification to encapsulate data within the requested structs.
+- Replaced raw 'buffer' with 'q: messageQ'.
+- Replaced 'write_mem' with 'write_msgs' which handles 'seq[message]'.
+- Updated the program logic to access fields via 'q.tail', 'q.head', and 'q.messages'.
+
+-----------------------------------------------------------------------------
+STEP 3: ADDING CORE METADATA
+-----------------------------------------------------------------------------
+
+USER QUERY:
+This struct represents a core: 
+struct core { // abstract core!
+    id: int, // core id
+    atomicity: bool, // atomicity flag
+    notification: bool // cross core notification flag
+};
+
+AGENT RESPONSE:
+Integrated the 'core' struct into the protocol.
+- Declared 'thisCore' (Sender) and 'targetCore' (Receiver).
+- Initialized 'msg.fromCore' and 'msg.toCore' using the IDs from the core structs.
+- Added a step to trigger 'targetCore.notification := true' after the enqueue operation.
+
+-----------------------------------------------------------------------------
+STEP 4: ENABLING RECEIVER ATOMICITY
+-----------------------------------------------------------------------------
+
+USER QUERY:
+Correct. Finally, the last specification is that the sender core explicitly 
+enables atomicity of the receiver core.
+
+AGENT RESPONSE:
+Updated the protocol to include the atomicity signal.
+- Added 'targetCore.atomicity := true' at the end of the program.
+- Updated postconditions to verify that the target core's atomicity flag was set.
+
+-----------------------------------------------------------------------------
+STEP 5: IMPLEMENTING THE ATOMIC LOCK SEQUENCE
+-----------------------------------------------------------------------------
+
+USER QUERY:
+The sender sets the target core's atomicity before updating the target core's 
+ring buffer and disables the atomicity after the update.
+
+AGENT RESPONSE:
+Refined the program to follow a strict "Acquire-Update-Release" locking pattern.
+- Moved 'targetCore.atomicity := true' to immediately BEFORE the buffer write.
+- Added 'targetCore.atomicity := false' immediately AFTER the tail pointer is advanced.
+- Updated postconditions to ensure the lock is released ('atomicity == false').
+
+-----------------------------------------------------------------------------
+STEP 6: STATIC MAPPING OF CORES TO QUEUES
+-----------------------------------------------------------------------------
+
+USER QUERY:
+There also exists a static mapping of ring buffers to core. Add a mapping, as 
+a sequence. Each index of that sequence is a core and the value at that index 
+is the core's ring buffer.
+
+AGENT RESPONSE:
+Updated the specification to its final refined form.
+- Added 'core_queues: seq[messageQ]' as the global static mapping.
+- Updated the program to:
+    1. Fetch the local copy 'q' from 'core_queues[targetCore.id]'.
+    2. Perform the spin-wait and the locked update on the local copy.
+    3. Commit the local copy back to the mapping: 'core_queues[targetCore.id] := q'.
+- Updated postconditions to verify the state within the static mapping.
+
+-----------------------------------------------------------------------------
+STEP 7: ATOMIC SPIN-WAIT REFINEMENT
+-----------------------------------------------------------------------------
+
+USER QUERY:
+In the while loop, the capacity check is atomic. When the loop exits, the 
+atomicity is enabled. While it is spinning, the atomicity is enabled, check is 
+done, then the atomicity is disabled.
+
+AGENT RESPONSE:
+Integrated the atomic locking logic directly into the spin-wait mechanism.
+- The program now enables 'targetCore.atomicity := true' inside the loop body.
+- Performs the capacity check while the target core is in an atomic state.
+- If the buffer is still full, it releases atomicity ('atomicity := false') to spin.
+- If the buffer has space, the loop exits with atomicity still enabled, ensuring
+  the subsequent update is performed in an atomic context.
+- Finalized by disabling atomicity after the update and committing to the mapping.
+
+=============================================================================
+END OF HISTORY
+=============================================================================
