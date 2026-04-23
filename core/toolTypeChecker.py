@@ -67,7 +67,7 @@ class TypeChecker:
                 return operand_type
             
         elif isinstance(expr, FuncCall):
-            # --- NEW: Intercept implicitly generated struct constructors ---
+            # --- Intercept implicitly generated struct constructors ---
             if expr.name.startswith("mk_") and expr.name[3:] in self.env.structs:
                 struct_name = expr.name[3:]
                 struct_fields = list(self.env.get_struct_fields(struct_name).values())
@@ -115,7 +115,7 @@ class TypeChecker:
         elif isinstance(expr, SeqAccess):
             seq_type = self.get_expr_type(expr.seq_obj)
             if not seq_type.startswith("seq["):
-                raise Exception(f"Cannot inded a non-sequence type {seq_type}")
+                raise Exception(f"Cannot index a non-sequence type {seq_type}")
             idx_type = self.get_expr_type(expr.index)
             if idx_type not in NUMERIC_TYPES:
                 raise Exception(f"Sequence index must be numeric")

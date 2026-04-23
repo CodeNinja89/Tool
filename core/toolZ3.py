@@ -135,6 +135,14 @@ class Z3Translator:
             left_is_null = isinstance(expr.left, Literal) and expr.left.value == "null"
             right_is_null = isinstance(expr.right, Literal) and expr.right.value == "null"
 
+            # --- Z3 "NULL" RESOLUTION MAGIC ---
+            # Z3 lacks a universal 'null', so we infer the type from the other side 
+            # of the equation and fetch its specific empty constructor (e.g., 'null_BST').
+            # IMPORTANT Z3 API QUIRK: Zero-argument datatype constructors are automatically 
+            # evaluated into concrete constants (DatatypeRef) by the Python bindings. 
+            # Do NOT add parentheses (e.g., null_constructor()) or Z3 will crash 
+            # with "TypeError: 'DatatypeRef' object is not callable".
+
             if left_is_null and not right_is_null:
                 right_type = tc.get_expr_type(expr.right)
                 z3_sort = self.get_z3_sort(right_type)
@@ -295,7 +303,11 @@ class Z3Translator:
                     if self.oracle_manager.is_recursive(oracle_def):
                         print(f"DEBUG: Compiling Native Z3 Recursive Function for '{expr.name}'")
 
-                        # Declare and CACHE immediately to break the infinite translation loop
+                        # When translating the body of a recursive function, the AST translator 
+                        # will eventually hit a FuncCall pointing to itself. If 
+                        # we didn't cache z3_func right now, the translator would try to compile 
+                        # the function again, and again, forever. Caching it early breaks the loop.
+
                         z3_func = z3.RecFunction(expr.name, *domain_sorts, range_sort)
                         self.func_cache[expr.name] = z3_func
 
@@ -319,7 +331,11 @@ class Z3Translator:
                         if not body_ast:
                             raise Exception(f"Recursive returns clause in '{expr.name}' must be formatted as 'ret_name == <expression>'")
 
-                        # D. Inject formal parameters into the environment for body translation
+                        # To translate the body, the compiler temporarily injects the formal parameters 
+                        # (like t and x from your BST example) into the global environment. It translates 
+                        # the body (z3_body), and then immediately deletes the variables so they don't 
+                        # leak into the rest of the program.
+                        
                         z3_bound_vars = []
                         for arg in oracle_def.args:
                             self.env.variables[arg.name] = arg.typeName

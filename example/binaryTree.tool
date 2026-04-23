@@ -29,6 +29,11 @@ oracle insert(t: BST, x: int) -> new_t: BST {
     );
 }
 
+oracle is_empty(n: BST) -> res: bool {
+    // BUG TRIGGER: 'null' is on the RIGHT side of the '=='
+    returns res == (n == null); 
+}
+
 // --- Variables for our Proof ---
 original_tree: BST;
 v: int;
@@ -42,8 +47,9 @@ is_correct: bool;
 // Theorem: Inserting X into any arbitrary tree T guarantees 
 // that contains(new_T, X) is mathematically true.
 // We assert the contradiction to trigger a refutation proof.
-is_correct == false;
+// is_correct == false;
+is_empty(new_tree) == true;
 
 %% program
 new_tree := insert(original_tree, v);
-is_correct := contains(new_tree, v);
+// is_correct := contains(new_tree, v);
