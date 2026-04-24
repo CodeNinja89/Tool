@@ -45,6 +45,34 @@ class Z3Translator:
 
         return sort
     
+    # ==========================================
+    # Z3 ALGEBRAIC DATATYPE (ADT) ARCHITECTURE
+    # ==========================================
+    # Unlike languages with memory addresses (C/Java), Z3 has no concept of a 
+    # universal "null pointer" (e.g., 0x00000000). Instead, structs must be 
+    # modeled as strict Algebraic Datatypes with mathematically disjoint states.
+    #
+    # For every user-defined struct (e.g., 'BST'), we declare TWO constructors:
+    # 
+    # 1. The Data Constructor (e.g., 'mk_BST'): 
+    #    Takes arguments mapping to the struct's fields. Z3 automatically attaches 
+    #    accessors (e.g., '.val', '.left') exclusively to this constructor.
+    # 
+    # 2. The Null Constructor (e.g., 'null_BST'):
+    #    Takes zero arguments. This represents the "empty shape" of the struct.
+    #
+    # --- The Mathematical Guarantees ---
+    # By defining multiple constructors on a single Z3 Datatype, we get three 
+    # automatic axioms from the SMT solver:
+    #   A) Mutually Exclusive: An object is strictly either 'mk_BST' OR 'null_BST'.
+    #      (e.g., mk_BST(x,y,z) != null_BST() is automatically proven True).
+    #   B) Recognizers: Z3 secretly generates boolean checks (is_mk_BST(t) and 
+    #      is_null_BST(t)) to test which state an object is currently in.
+    #   C) Safe Access: Accessing a field (t.val) on a 'null_BST' is mathematically
+    #      undefined, forcing the verifier to prove the object is NOT null before 
+    #      evaluating its fields.
+    # ==========================================
+    
     def _register_structs(self):
         # translate a struct in Tool to a Z3 data type
         for struct_name, fields in self.env.structs.items():
