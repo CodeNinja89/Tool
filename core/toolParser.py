@@ -105,6 +105,7 @@ class CHCTransformer(Transformer):
     def logic_and_op(self, items): return BinaryExpr(items[0], '&&', items[1])
     def logic_or_op(self, items): return BinaryExpr(items[0], '||', items[1])
     def not_f(self, items): return UnaryExpr('!', items[0])
+    def neg(self, items): return UnaryExpr('-', items[0])
 
     def ite_expr(self, items):
         return TernaryExpr(condition = items[0], true_expr=items[1], false_expr=items[2])

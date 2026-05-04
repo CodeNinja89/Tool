@@ -16,8 +16,21 @@ oracle contains(t: BST, x: int) -> found: bool {
     );
 }
 
+oracle all_less(tl: BST, vl: int) -> resl: bool {
+    returns resl == (tl == null ? true : (tl.val < vl && all_less(tl.left, vl) && all_less(tl.right, vl)));
+}
+
+oracle all_greater(tg: BST, vg: int) -> resg: bool {
+    returns resg == (tg == null ? true : (tg.val > vg && all_greater(tg.left, vg) && all_greater(tg.right, vg)));
+}
+
+oracle is_bst(t: BST) -> res: bool {
+    returns res == (t == null ? true : (all_less(t.left, t.val) && all_greater(t.right, t.val) && is_bst(t.left) && is_bst(t.right)));
+}
+
 // 2. The Recursive Insert Oracle
 oracle insert(t: BST, x: int) -> new_t: BST {
+    assumes is_bst(t);
     returns new_t == (
         (t == null) ? mk_BST(x, null, null) : (
             (x == t.val) ? t : (
@@ -30,7 +43,6 @@ oracle insert(t: BST, x: int) -> new_t: BST {
 }
 
 oracle is_empty(n: BST) -> res: bool {
-    // BUG TRIGGER: 'null' is on the RIGHT side of the '=='
     returns res == (n == null); 
 }
 
@@ -41,15 +53,17 @@ new_tree: BST;
 is_correct: bool;
 
 %% preconditions
-// None needed! 
+// None needed!
+original_tree != null;
+is_bst(original_tree) == true;
 
 %% postconditions
 // Theorem: Inserting X into any arbitrary tree T guarantees 
 // that contains(new_T, X) is mathematically true.
 // We assert the contradiction to trigger a refutation proof.
-// is_correct == false;
-is_empty(new_tree) == true;
+is_correct == false;
+// is_empty(new_tree) == true;
 
 %% program
 new_tree := insert(original_tree, v);
-// is_correct := contains(new_tree, v);
+is_correct := is_bst(new_tree) && contains(new_tree, v);

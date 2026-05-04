@@ -66,6 +66,25 @@ class TypeChecker:
                     raise Exception(f"Type Error: '{expr.op}' requires a numberic type, got '{operand_type}'")
                 return operand_type
             
+        elif isinstance(expr, TernaryExpr):
+            # 1. Recursively get the types of both branches
+            true_type = self.get_expr_type(expr.true_expr)
+            false_type = self.get_expr_type(expr.false_expr)
+            
+            # 2. Handle 'null' wildcard resolution
+            if true_type == "null" and false_type != "null":
+                return false_type
+            if false_type == "null" and true_type != "null":
+                return true_type
+            if true_type == "null" and false_type == "null":
+                return "null"
+                
+            # 3. If both are concrete types, they must match
+            if true_type != false_type:
+                raise Exception(f"Type Error in Ternary: branches have mismatched types '{true_type}' and '{false_type}'")
+                
+            return true_type
+            
         elif isinstance(expr, FuncCall):
             # --- Intercept implicitly generated struct constructors ---
             if expr.name.startswith("mk_") and expr.name[3:] in self.env.structs:

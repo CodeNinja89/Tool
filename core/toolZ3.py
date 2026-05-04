@@ -125,8 +125,12 @@ class Z3Translator:
     def get_z3_var(self, name: str, type_name: str) -> z3.ExprRef:
         # creates or retrieves a specific Z3 variable
         if name in self.var_cache:
-            return self.var_cache[name]
-        
+            cached_var = self.var_cache[name]
+            # Ensure the cached variable actually matches the requested type!
+            if cached_var.sort() == self.get_z3_sort(type_name):
+                return cached_var
+                
+        # If not cached, OR if the type mismatched (shadowing), create a new one
         z3_sort = self.get_z3_sort(type_name)
         z3_var = z3.Const(name, z3_sort)
         self.var_cache[name] = z3_var
@@ -175,7 +179,7 @@ class Z3Translator:
                 right_type = tc.get_expr_type(expr.right)
                 z3_sort = self.get_z3_sort(right_type)
                 null_cons = getattr(z3_sort, f"null_{right_type}")
-                left_z3 = cast(z3.ExprRef, null_cons())
+                left_z3 = cast(z3.ExprRef, null_cons)
                 right_z3 = self.translate_expr(expr.right, tc)
 
             elif right_is_null and not left_is_null:
@@ -264,8 +268,35 @@ class Z3Translator:
             
         elif isinstance(expr, TernaryExpr):
             cond_z3 = self.translate_expr(expr.condition, tc)
-            true_z3 = self.translate_expr(expr.true_expr, tc)
-            false_z3 = self.translate_expr(expr.false_expr, tc)
+
+            true_is_null = isinstance(expr.true_expr, Literal) and expr.true_expr.value == "null"
+            false_is_null = isinstance(expr.false_expr, Literal) and expr.false_expr.value == "null"
+
+            # --- Z3 TERNARY NULL RESOLUTION MAGIC ---
+            if true_is_null and not false_is_null:
+                # Infer the type from the false branch
+                false_type = tc.get_expr_type(expr.false_expr)
+                z3_sort = self.get_z3_sort(false_type)
+                null_constructor = getattr(z3_sort, f"null_{false_type}")
+                true_z3 = cast(z3.ExprRef, null_constructor)
+                false_z3 = self.translate_expr(expr.false_expr, tc)
+                
+            elif false_is_null and not true_is_null:
+                # Infer the type from the true branch
+                true_type = tc.get_expr_type(expr.true_expr)
+                z3_sort = self.get_z3_sort(true_type)
+                null_constructor = getattr(z3_sort, f"null_{true_type}")
+                false_z3 = cast(z3.ExprRef, null_constructor)
+                true_z3 = self.translate_expr(expr.true_expr, tc)
+                
+            elif true_is_null and false_is_null:
+                raise Exception("Cannot infer type of null in ternary expression where both branches are null.")
+                
+            else:
+                # Standard translation if neither branch is a raw null literal
+                true_z3 = self.translate_expr(expr.true_expr, tc)
+                false_z3 = self.translate_expr(expr.false_expr, tc)
+
             return cast(z3.ExprRef, z3.If(cond_z3, true_z3, false_z3))
         
         elif isinstance(expr, UnaryExpr):
@@ -319,7 +350,7 @@ class Z3Translator:
                     expected_type = oracle_def.args[i].typeName
                     z3_sort = self.get_z3_sort(expected_type)
                     null_constructor = getattr(z3_sort, f"null_{expected_type}")
-                    z3_args.append(cast(z3.ExprRef, null_constructor()))
+                    z3_args.append(cast(z3.ExprRef, null_constructor))
                 else:
                     z3_args.append(self.translate_expr(arg, tc))
                 
@@ -365,7 +396,15 @@ class Z3Translator:
                         # leak into the rest of the program.
                         
                         z3_bound_vars = []
+                        old_env_vars = {}
+                        old_cache_vars = {}
+                        
                         for arg in oracle_def.args:
+                            if arg.name in self.env.variables:
+                                old_env_vars[arg.name] = self.env.variables.get(arg.name)
+                            if arg.name in self.var_cache:
+                                old_cache_vars[arg.name] = self.var_cache.get(arg.name)
+
                             self.env.variables[arg.name] = arg.typeName
                             z3_bound_vars.append(self.get_z3_var(arg.name, arg.typeName))
 
@@ -374,7 +413,12 @@ class Z3Translator:
 
                         # F. Clean up the environment so we don't pollute the global scope
                         for arg in oracle_def.args:
-                            del self.env.variables[arg.name]
+                            if arg.name in old_env_vars:
+                                self.env.variables[arg.name] = old_env_vars[arg.name]
+                            else:
+                                del self.env.variables[arg.name]
+                            if arg.name in old_cache_vars:
+                                self.var_cache[arg.name] = old_cache_vars[arg.name]
                             if arg.name in self.var_cache:
                                 del self.var_cache[arg.name]
 

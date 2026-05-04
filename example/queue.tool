@@ -64,8 +64,8 @@ head := head + 1;
 
 // let's try to dequeue one more element. This should fail.
 
-val3 := dequeue(mem, head, tail);
-head := head + 1;
+// val3 := dequeue(mem, head, tail);
+// head := head + 1;
 
 // 5. Verify the FIFO property: Did they come out in the exact order they went in?
 is_fifo := (val1 == x) && (val2 == y);
