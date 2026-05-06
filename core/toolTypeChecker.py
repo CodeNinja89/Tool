@@ -8,15 +8,26 @@ NUMERIC_TYPES = {
 class TypeChecker:
     def __init__(self, env: TypeEnvironment):
         self.env = env
+        self.delta = {} # track unconsumed resources (variables)
+        self.enforce_linearity = True
 
-    def get_expr_type(self, expr: ASTNode) -> str:
+    def get_expr_type(self, expr: ASTNode, is_refer: bool = False) -> str:
         if isinstance(expr, VarRef):
             name = expr.name
             if '_' in name and name.rsplit('_', 1)[1].isdigit():
                 base_name = name.rsplit('_', 1)[0]
             else:
                 base_name = name
-            return self.env.get_var_type(base_name)
+
+            var_type = self.env.get_var_type(base_name)
+            if self.enforce_linearity and var_type in self.env.linear_structs:
+                if base_name in self.delta:
+                    if not is_refer:
+                        del self.delta[base_name]
+                else:
+                    raise Exception(f"Use-After-Free Error: Linear variable '{base_name}' was already consumed")
+                
+            return var_type
         
         elif isinstance(expr, Literal):
             if expr.value in ["true", "false"]:
@@ -107,14 +118,15 @@ class TypeChecker:
             if len(expr.args) != len(oracle.args):
                 raise Exception(f"Oracle {expr.name} expects {len(oracle.args)} but got {len(expr.args)}")
             for i, arg_expr in enumerate(expr.args):
-                arg_type = self.get_expr_type(arg_expr)
+                is_refer_arg = oracle.args[i].is_refer
+                arg_type = self.get_expr_type(arg_expr, is_refer_arg)
                 expected_type = oracle.args[i].typeName
                 if arg_type != expected_type:
                     raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
             return oracle.retType
             
         elif isinstance(expr, FieldAccess):
-            obj_type = self.get_expr_type(expr.obj)
+            obj_type = self.get_expr_type(expr.obj, is_refer)
 
             # as per the grammar, a field access of the form <structName>.<fieldName>
             # if the struct has a field which is a sequence, then writing
@@ -154,13 +166,35 @@ class TypeChecker:
             raise Exception(f"Type Error: {msg} (Got '{actual}', expected '{expected}')")
         
     def check_stmt(self, stmt: Stmt):
-        if isinstance(stmt, AssignStmt):
+        '''if isinstance(stmt, AssignStmt):
             # The LHS and RHS must have exactly the same type!
             lhs_type = self.get_expr_type(stmt.lvalue)
             rhs_type = self.get_expr_type(stmt.expr)
             if lhs_type != rhs_type:
                 raise Exception(f"Type Error in Assignment: Cannot assign '{rhs_type}' to '{lhs_type}'. Explicit cast required.")
                 
+            if lhs_type in self.env.linear_structs:
+                self.delta[base_name]'''
+        if isinstance(stmt, AssignStmt):
+            rhs_type = self.get_expr_type(stmt.expr)
+            # replenish linear resources
+            if isinstance(stmt.lvalue, VarRef):
+                base_name = stmt.lvalue.name
+                if '_' in base_name and base_name.rsplit('_', 1)[1].isdigit():
+                    base_name = base_name.rsplit('_', 1)[0]
+                lhs_type = self.env.get_var_type(base_name)
+                if lhs_type != rhs_type:
+                    raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
+                
+                # if we assign to a linear variable, it becomes available in Delta again
+                if lhs_type in self.env.linear_structs:
+                    self.delta[base_name] = lhs_type
+
+            else:
+                lhs_type = self.get_expr_type(stmt.lvalue)
+                if lhs_type != rhs_type:
+                    raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
+
         elif isinstance(stmt, AssertStmt):
             self._assert_type(stmt.formula, "bool", "Assert condition must be boolean.")
             
@@ -170,9 +204,20 @@ class TypeChecker:
                 
         elif isinstance(stmt, IfStmt):
             self._assert_type(stmt.condition, "bool", "If condition must be boolean.")
+            delta_before = self.delta.copy()
             self.check_stmt(stmt.then_block)
+            delta_then = self.delta.copy()
+            self.delta = delta_before.copy()
+
             if stmt.else_block:
                 self.check_stmt(stmt.else_block)
+            
+            delta_else = self.delta.copy()
+
+            if delta_then != delta_else:
+                raise Exception(f"Linear Type Error in If/Else block")
+            
+            self.delta = delta_then
                 
         elif isinstance(stmt, WhileStmt):
             self._assert_type(stmt.condition, "bool", "While condition must be boolean.")
@@ -182,15 +227,32 @@ class TypeChecker:
                 measure_type = self.get_expr_type(stmt.measure)
                 if not ("int" in measure_type):
                     raise Exception(f"Type Error: Loop measure must be a numeric type, got '{measure_type}'.")
+                
+            delta_before = self.delta.copy()
             self.check_stmt(stmt.body)
+            if self.delta != delta_before:
+                raise Exception("Linear Type Error: While loop body permanently consumes resources!")
 
     def check_program(self, program: Program):
+        # 1. Initialize Delta with global linear variables
+        for var_name, var_type in self.env.variables.items():
+            if var_type in self.env.linear_structs:
+                self.delta[var_name] = var_type
+
+        self.enforce_linearity = False
+
         for pre in program.preconditions:
             self._assert_type(pre, "bool", "PRECONDITION MUST BE BOOLEAN!")
-
         for post in program.postconditions:
             self._assert_type(post, "bool", "POSTCONDITIONS MUST BE BOOLEAN!")
 
+        self.enforce_linearity = True
+            
         for stmt in program.specProgram:
             if isinstance(stmt, Stmt):
                 self.check_stmt(stmt)
+                
+        # Scope Exit: Anti-Leak Check
+        if len(self.delta) > 0:
+            leaked = ", ".join(self.delta.keys())
+            raise Exception(f"Memory Leak Error: Linear variables [{leaked}] were never consumed.")

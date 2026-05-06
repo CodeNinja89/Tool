@@ -1,7 +1,7 @@
 from lark import Lark, Transformer, v_args
 from core.toolAst import *
 
-class CHCTransformer(Transformer):
+class Z3Transformer(Transformer):
 
     def start(self, items):
         # items[0] is the result of structured_program
@@ -31,18 +31,24 @@ class CHCTransformer(Transformer):
     def var_decl(self, items):
         name = str(items[0])
         typeName = str(items[1])
-        return VarDecl(name, typeName)
+        return VarDecl(name, typeName, False)
     
     def struct_def(self, items):
-        struct_name = str(items[0])
+        # items[0] is always reserved for the optional [LINEAR] token.
+        # It will be None if the user didn't write 'linear'.
+        is_linear = items[0] is not None
+        
+        # items[1] is always the struct name
+        struct_name = str(items[1])
+        
         fields = {}
-
-        for i in range(1, len(items), 2):
+        # Fields now reliably start at index 2 and alternate (name, type)
+        for i in range(2, len(items), 2):
             field_name = str(items[i])
             field_type = str(items[i + 1])
             fields[field_name] = field_type
-        
-        return StructDef(struct_name, fields)
+            
+        return StructDef(struct_name, fields, is_linear)
     
     # --- Types ---
     
@@ -73,7 +79,11 @@ class CHCTransformer(Transformer):
         return items
     
     def arg(self, items):
-        return VarDecl(str(items[0]), str(items[1]))
+        # items[0] is always reserved for the optional [REFER] token.
+        is_refer = items[0] is not None
+        
+        # items[1] is always the argument name, and items[2] is always the type
+        return VarDecl(name=str(items[1]), typeName=str(items[2]), is_refer=is_refer)
     
     def function_body(self, items):
         return items

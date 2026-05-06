@@ -1,12 +1,12 @@
 %% declarations
-struct BST {
+linear struct BST {
     val: int;
     left: BST;
     right: BST;
 }
 
 // 1. The Recursive Contains Oracle
-oracle contains(t: BST, x: int) -> found: bool {
+oracle contains(refer t: BST, x: int) -> found: bool {
     returns found == (
         (t == null) ? false : (
             (x == t.val) ? true : (
@@ -16,15 +16,15 @@ oracle contains(t: BST, x: int) -> found: bool {
     );
 }
 
-oracle all_less(tl: BST, vl: int) -> resl: bool {
-    returns resl == (tl == null ? true : (tl.val < vl && all_less(tl.left, vl) && all_less(tl.right, vl)));
+oracle all_less(refer t: BST, vl: int) -> resl: bool {
+    returns resl == (t == null ? true : (t.val < vl && all_less(t.left, vl) && all_less(t.right, vl)));
 }
 
-oracle all_greater(tg: BST, vg: int) -> resg: bool {
-    returns resg == (tg == null ? true : (tg.val > vg && all_greater(tg.left, vg) && all_greater(tg.right, vg)));
+oracle all_greater(refer t: BST, vg: int) -> resg: bool {
+    returns resg == (t == null ? true : (t.val > vg && all_greater(t.left, vg) && all_greater(t.right, vg)));
 }
 
-oracle is_bst(t: BST) -> res: bool {
+oracle is_bst(refer t: BST) -> res: bool {
     returns res == (t == null ? true : (all_less(t.left, t.val) && all_greater(t.right, t.val) && is_bst(t.left) && is_bst(t.right)));
 }
 
@@ -46,15 +46,22 @@ oracle is_empty(n: BST) -> res: bool {
     returns res == (n == null); 
 }
 
+oracle destruct(n: BST) -> res: bool {
+    returns res == true; 
+}
+
+
 // --- Variables for our Proof ---
 original_tree: BST;
 v: int;
-new_tree: BST;
 is_correct: bool;
+is_freed: bool;
 
 %% preconditions
-// None needed!
+
 original_tree != null;
+original_tree.left != null;
+original_tree.right != null;
 is_bst(original_tree) == true;
 
 %% postconditions
@@ -62,8 +69,12 @@ is_bst(original_tree) == true;
 // that contains(new_T, X) is mathematically true.
 // We assert the contradiction to trigger a refutation proof.
 is_correct == false;
-// is_empty(new_tree) == true;
 
 %% program
-new_tree := insert(original_tree, v);
-is_correct := is_bst(new_tree) && contains(new_tree, v);
+
+is_correct := (
+    (forall v: int . is_bst(insert(original_tree, v))) && 
+    (forall v: int . contains(insert(original_tree, v), v))
+);
+
+is_freed := destruct(original_tree);

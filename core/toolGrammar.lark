@@ -1,5 +1,5 @@
 // ==========================================
-//  The Oracle Oriented Language (TOOL)
+//  Typed Oracle Oriented Language (TOOL)
 // ==========================================
 
 start: structured_program
@@ -15,15 +15,18 @@ program_section: "%% program" (statement)*
 // --- Declarations ---
 ?declaration: var_decl | const_decl | function_def | struct_def
 
+LINEAR: "linear"
+REFER: "refer"
+
 var_decl: NAME ":" type ";"
 const_decl: "const" NAME ":" type ";"
-struct_def: "struct" NAME "{" (NAME ":" type ";")+ "}"
+struct_def: [LINEAR] "struct" NAME "{" (NAME ":" type ";")+ "}"
 
 // --- Axiomatic Functions / Oracles ---
 function_def: "oracle" NAME "(" [arg_list] ")" "->" NAME ":" type "{" function_body "}"
 
 arg_list: arg ("," arg)*
-arg: NAME ":" type
+arg: [REFER] NAME ":" type
 
 function_body: (function_clause)*
 

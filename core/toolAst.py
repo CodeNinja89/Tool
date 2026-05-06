@@ -18,11 +18,13 @@ class Program(ASTNode):
 class VarDecl(ASTNode):
     name: str
     typeName: str
+    is_refer: bool = False
 
 @dataclass
 class StructDef(ASTNode):
     name: str # name of the struct
     fields: Dict[str, str] # fields of a struct
+    is_linear: bool = False # linearity constraint
 
 @dataclass
 class FunctionDef(ASTNode):

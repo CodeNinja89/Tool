@@ -6,6 +6,7 @@ class TypeEnvironment:
         self.variables: Dict[str, str] = {}
         self.structs: Dict[str, Dict[str, str]] = {} # Maps struct names to their field layouts (e.g., {"Node": {"value": "uint32", "next": "Node"}})
         self.oracles: Dict[str, FunctionDef] = {}
+        self.linear_structs = set() # tracks linear ADTs
 
     def build(self, declarations: List[ASTNode]):
         for decl in declarations:
@@ -13,6 +14,8 @@ class TypeEnvironment:
                 self.variables[decl.name] = decl.typeName
             elif isinstance(decl, StructDef):
                 self.structs[decl.name] = decl.fields
+                if decl.is_linear:
+                    self.linear_structs.add(decl.name)
             elif isinstance(decl, FunctionDef):
                 self.oracles[decl.name] = decl
 

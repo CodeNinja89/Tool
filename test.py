@@ -2,7 +2,7 @@ import sys
 import os
 import z3
 from lark import Lark
-from core.toolParser import CHCTransformer
+from core.toolParser import Z3Transformer
 from core.toolSSA import SSATransformer
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import TypeChecker
@@ -27,17 +27,20 @@ def main():
     try:
         # 1. Parse and Build Environment
         tree = bridge_parser.parse(code)
-        ast = CHCTransformer().transform(tree)
+        ast = Z3Transformer().transform(tree)
         env = TypeEnvironment()
         env.build(ast.declarations)
 
         # 2. Type Check
         checker = TypeChecker(env)
         checker.check_program(ast)
+        checker.enforce_linearity = False
         
         # 3. Initialize Translator and Solver
         translator = Z3Translator(env)
         solver = z3.Solver(ctx=translator.z3_ctx)
+
+        solver.set("timeout", 20000)
 
         # 4. SSA Engine & Preconditions
         ssa_engine = SSATransformer(env)
@@ -99,10 +102,6 @@ def main():
 
         # 7. Final Check
         print("\n--- [DEBUG] SOLVER STATE ---")
-        """ if hasattr(translator, 'side_loaded_contracts'):
-            for contract in translator.side_loaded_contracts:
-                solver.add(contract)
-                print(f"Z3_Oracle_Contract: {contract}") """
         
         for a in solver.assertions():
             print(f"Assertion: {a}")
