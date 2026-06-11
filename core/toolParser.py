@@ -50,6 +50,11 @@ class Z3Transformer(Transformer):
             
         return StructDef(struct_name, fields, is_linear)
     
+    def invisible_decl(self, items):
+        name = str(items[1])
+        typeName = str(items[2])
+        return InvisibleDecl(name, typeName)
+    
     # --- Types ---
     
     def base_type(self, items):

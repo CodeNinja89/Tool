@@ -176,7 +176,17 @@ class TypeChecker:
             if lhs_type in self.env.linear_structs:
                 self.delta[base_name]'''
         if isinstance(stmt, AssignStmt):
-            rhs_type = self.get_expr_type(stmt.expr)
+            is_invisible_assign = False
+            if isinstance(stmt.lvalue, VarRef):
+                base_name = stmt.lvalue.name
+                if '_' in base_name and base_name.rsplit('_', 1)[1].isdigit():
+                    base_name = base_name.rsplit('_', 1)[0]
+                if base_name in self.env.invisible_vars:
+                    is_invisible_assign = True
+
+            # Evaluate RHS. If LHS is invisible, treat the RHS as a 'refer' so it isn't consumed!
+            rhs_type = self.get_expr_type(stmt.expr, is_refer=is_invisible_assign)
+
             # replenish linear resources
             if isinstance(stmt.lvalue, VarRef):
                 base_name = stmt.lvalue.name
@@ -187,7 +197,7 @@ class TypeChecker:
                     raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
                 
                 # if we assign to a linear variable, it becomes available in Delta again
-                if lhs_type in self.env.linear_structs:
+                if lhs_type in self.env.linear_structs and not is_invisible_assign:
                     self.delta[base_name] = lhs_type
 
             else:

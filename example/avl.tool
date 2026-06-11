@@ -130,7 +130,6 @@ root != null;
 // "For ALL integers 'v', inserting 'v' into the tree results in a valid AVL tree."
 
 (forall v: int . (is_avl(insert_avl(root, v)) == true)) == false;
-// is_valid == true;
 
 %% program
 new_root := insert_avl(root, val_to_insert);

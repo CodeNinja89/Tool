@@ -21,6 +21,11 @@ class VarDecl(ASTNode):
     is_refer: bool = False
 
 @dataclass
+class InvisibleDecl(ASTNode):
+    name: str
+    typeName: str
+
+@dataclass
 class StructDef(ASTNode):
     name: str # name of the struct
     fields: Dict[str, str] # fields of a struct

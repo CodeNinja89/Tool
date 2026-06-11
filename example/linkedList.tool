@@ -23,7 +23,7 @@ oracle contains(refer l: List, x: int) -> found: bool {
     returns found == (l == null ? false : (l.val == x ? true : contains(l.next, x)));
 }
 
-oracle is_sorted(refer l: List) -> res: bool {
+oracle is_sorted(refer l: List) -> res: bool { // the list is sorted in ascending order
     returns res == (
         (l == null) ? true : (
             (l.next == null) ? true : (
@@ -45,23 +45,34 @@ oracle insertSorted(l: List, x: int) -> new_l: List {
 // --- Variables for our Proof ---
 
 original_list: List;
+new_list: List;
+invisible temp: List; // ghost variable!
 is_free: bool;
 is_correct: bool;
+val: int; // value to be inserted
 
 %% preconditions
+
 is_sorted(original_list);
 length(original_list) > 1;
 
 %% postconditions
 
-is_correct == false;
+is_correct == false; // invoke proof-by-refutation to generate a witness
 
 %% program
 
+temp := original_list; // we save the old state of the list in a specification only variable. This does not consume the linear struct.
+
+new_list := insertSorted(original_list, val);
 is_correct := (
-    (forall v: int . length(insertSorted(original_list, v)) == length(original_list) + 1) &&
-    (forall v: int . is_sorted(insertSorted(original_list, v)) == true) &&
-    (forall v: int . contains(insertSorted(original_list, v), v) == true)
+    (length(new_list) == length(temp) + 1) && 
+    (is_sorted(new_list))
 );
 
-is_free := destruct(original_list);
+// if we try to re-assign "original_list" to "temp", it will fail because original_list was already consumed. We cannot make an alias!
+// temp := original_list;
+
+// is_free := destruct(original_list); // no need to explicitly consume the "original_list". It was consumed by insertSorted
+is_free := destruct(temp);
+is_free := destruct(new_list);

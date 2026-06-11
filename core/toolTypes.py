@@ -7,10 +7,14 @@ class TypeEnvironment:
         self.structs: Dict[str, Dict[str, str]] = {} # Maps struct names to their field layouts (e.g., {"Node": {"value": "uint32", "next": "Node"}})
         self.oracles: Dict[str, FunctionDef] = {}
         self.linear_structs = set() # tracks linear ADTs
+        self.invisible_vars = set() # tracks invisible variables (e.g., ghost variables)
 
     def build(self, declarations: List[ASTNode]):
         for decl in declarations:
             if isinstance(decl, VarDecl):
+                self.variables[decl.name] = decl.typeName
+            elif isinstance(decl, InvisibleDecl):
+                self.invisible_vars.add(decl.name)
                 self.variables[decl.name] = decl.typeName
             elif isinstance(decl, StructDef):
                 self.structs[decl.name] = decl.fields
