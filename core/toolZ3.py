@@ -483,6 +483,11 @@ class Z3Translator:
                     
             return cast(z3.ExprRef, constructor(*constructor_args))
         
+        elif isinstance(expr, CallSiteCheck):
+            # A CallSiteCheck is just a wrapper for a boolean formula generated 
+            # to verify an oracle's 'assumes' clause. We just unwrap it and translate it!
+            return self.translate_expr(expr.formula, tc)
+        
         raise NotImplementedError(f"Z3 translation for {type(expr)} not implemented!")
     
     def verify_loop_transition(self, expr: LoopTransition, tc: TypeChecker, 
@@ -509,7 +514,7 @@ class Z3Translator:
             print(f"invariant {inv_pre} does not hold upon entry!")
             print(solver.model())
             solver.pop()
-            return False        
+            return False
         solver.pop()
         
         # verify the inductive step

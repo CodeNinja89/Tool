@@ -166,15 +166,6 @@ class TypeChecker:
             raise Exception(f"Type Error: {msg} (Got '{actual}', expected '{expected}')")
         
     def check_stmt(self, stmt: Stmt):
-        '''if isinstance(stmt, AssignStmt):
-            # The LHS and RHS must have exactly the same type!
-            lhs_type = self.get_expr_type(stmt.lvalue)
-            rhs_type = self.get_expr_type(stmt.expr)
-            if lhs_type != rhs_type:
-                raise Exception(f"Type Error in Assignment: Cannot assign '{rhs_type}' to '{lhs_type}'. Explicit cast required.")
-                
-            if lhs_type in self.env.linear_structs:
-                self.delta[base_name]'''
         if isinstance(stmt, AssignStmt):
             is_invisible_assign = False
             if isinstance(stmt.lvalue, VarRef):

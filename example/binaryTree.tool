@@ -42,7 +42,7 @@ oracle insert(t: BST, x: int) -> new_t: BST {
     );
 }
 
-oracle is_empty(n: BST) -> res: bool {
+oracle is_empty(refer n: BST) -> res: bool {
     returns res == (n == null); 
 }
 

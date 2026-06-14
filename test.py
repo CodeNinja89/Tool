@@ -92,13 +92,32 @@ def main():
                 print(f"Z3_ρ: {z3_formula}")
 
         # 6. Postconditions (Macro Inlining happens here too!)
+        # 6. Postconditions (Macro Inlining happens here too!)
         print("\n--- [STEP 3] SSA-Aligned Postconditions ---")
+        
+        postcondition_exprs = []
         for post in ast.postconditions:
             ssa_post = ssa_engine.transform_expr(post)
             z3_post = translator.translate_expr(ssa_post, checker)
-            # We add the NEGATION to the solver to look for counter-examples
-            solver.add(z3.Not(z3_post))
-            print(f"Z3_Post (Asserted as Not): {z3.Not(z3_post)}")
+            postcondition_exprs.append(z3_post)
+            print(f"Parsed Z3_Post: {z3_post}")
+
+        # Ensure we actually have postconditions before adding to solver
+        if postcondition_exprs:
+            # 1. Combine all postconditions with AND (if there's more than one)
+            if len(postcondition_exprs) > 1:
+                combined_postconditions = z3.And(*postcondition_exprs)
+            else:
+                combined_postconditions = postcondition_exprs[0]
+
+            # 2. Apply De Morgan's properly: Negate the entire combined block ONCE
+            goal_to_falsify = z3.Not(combined_postconditions)
+
+            # 3. Add the single negation to the solver to hunt for counter-examples
+            solver.add(goal_to_falsify)
+            print(f"Z3_Combined_Post (Asserted as Not): {goal_to_falsify}")
+        else:
+            print("No postconditions to verify.")
 
         # 7. Final Check
         print("\n--- [DEBUG] SOLVER STATE ---")

@@ -129,8 +129,13 @@ root != null;
 // We ask Z3 to refute this explicitly quantified property:
 // "For ALL integers 'v', inserting 'v' into the tree results in a valid AVL tree."
 
+<<<<<<< Updated upstream
 (forall v: int . (is_avl(insert_avl(root, v)) == true)) == false;
+=======
+// (forall v: int . (is_avl(insert_avl(root, v)) == true)) == false;
+is_valid == false;
+>>>>>>> Stashed changes
 
 %% program
-new_root := insert_avl(root, val_to_insert);
-is_valid := (is_avl(new_root) && contains(new_root, val_to_insert));
+root := insert_avl(root, val_to_insert);
+is_valid := (is_avl(root) && contains(root, val_to_insert));
