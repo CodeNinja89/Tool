@@ -64,19 +64,11 @@ oracle removeSorted(l: List, x: int) -> new_l: List {
 // --- Variables for our Proof ---
 
 original_list: List;
-<<<<<<< Updated upstream
-new_list: List;
-invisible temp: List; // ghost variable!
-is_free: bool;
-is_correct: bool;
-val: int; // value to be inserted
-=======
 alias1: List;
 alias2: List;
 is_free: bool;
 is_correct: bool;
 v: int;
->>>>>>> Stashed changes
 
 %% preconditions
 
@@ -86,26 +78,6 @@ length(original_list) > 1;
 
 %% postconditions
 
-<<<<<<< Updated upstream
-is_correct == false; // invoke proof-by-refutation to generate a witness
-
-%% program
-
-temp := original_list; // we save the old state of the list in a specification only variable. This does not consume the linear struct.
-
-new_list := insertSorted(original_list, val);
-is_correct := (
-    (length(new_list) == length(temp) + 1) && 
-    (is_sorted(new_list))
-);
-
-// if we try to re-assign "original_list" to "temp", it will fail because original_list was already consumed. We cannot make an alias!
-// temp := original_list;
-
-// is_free := destruct(original_list); // no need to explicitly consume the "original_list". It was consumed by insertSorted
-is_free := destruct(temp);
-is_free := destruct(new_list);
-=======
 is_correct == false; // proof-by-refutation. We use this approach because raw SMT struggles with recursive definitions. 
 // Dafny and all emit a lot of metadata that help Z3 backend to verify such recursive definitions but that is not yet
 // implemented in TOOL. And probably never will be... TOOL is a SPECIFICATION LANGUAGE and not a theorem prover!
@@ -128,4 +100,3 @@ original_list := removeSorted(alias2, v); // updated list.
 is_correct := (is_sorted(original_list) && !contains(original_list, v));
 
 is_free := destruct(original_list); // explicitly consume the list using a dummy function. this is akin to free().
->>>>>>> Stashed changes
