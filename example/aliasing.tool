@@ -40,7 +40,7 @@ resourceVal == 34;
 
 %% program
 
-taskA.resource := res; // taskA "owns" the resource. This is a compile time guarantee!
+taskA.resource := res; // taskA "owns" the resource. This is a specification/compile time guarantee!
 
 // taskB tries to acquire the same resource
 // taskB.resource := res; // this fails to compile because taskA already owns the resource.

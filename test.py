@@ -51,6 +51,14 @@ def main():
             solver.add(z3_pre)
             print(f"Z3_Pre: {z3_pre}")
 
+        print("\n--- Precondition Consistency Check ---")
+        # We check the solver BEFORE adding the program or postconditions
+        if solver.check() == z3.unsat:
+            print("❌ VERDICT: VACUOUS PROOF (Preconditions are contradictory!)")
+            print("The program's initial state is mathematically impossible.")
+            exit(1)
+        print("✅ Preconditions are satisfiable. Universe created successfully.")
+
         # 5. Program Transitions
         print("\n--- [STEP 2] SSA Program Formulas ---")
         transition_items = ssa_engine.generate_transition_predicate(ast.specProgram)
