@@ -64,6 +64,7 @@ oracle removeSorted(l: List, x: int) -> new_l: List {
 // --- Variables for our Proof ---
 
 original_list: List;
+original_list_test: List;
 alias1: List;
 alias2: List;
 is_free: bool;
@@ -89,6 +90,7 @@ alias1 := original_list;
 
 original_list := insertSorted(alias1, v); // the original_list is updated.
 is_correct := is_sorted(original_list);
+original_list_test := insertSorted(alias1, v);
 
 alias2 := original_list; // alias2 takes ownership
 
