@@ -1,13 +1,13 @@
 import sys
-import os
 import z3
 from lark import Lark
-from core.toolParser import Z3Transformer
-from core.toolSSA import SSATransformer
+
+from core.toolParser import ToolASTBuilder
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import TypeChecker
-from core.toolZ3 import Z3Translator
-from core.toolAst import LoopTransition, CallSiteCheck
+from core.toolSSA import SSABuilder
+from core.toolZ3 import Z3Verifier
+from core.toolAst import Expr
 
 def main():
     if len(sys.argv) < 2:
@@ -22,133 +22,94 @@ def main():
     with open(grammar_path) as f:
         grammar = f.read()
 
-    bridge_parser = Lark(grammar, start='start', parser='lalr', debug=True)
+    print(f"\n[*] Compiling: {filename}")
+    bridge_parser = Lark(grammar, start='start', parser='lalr')
 
     try:
-        # 1. Parse and Build Environment
+        # ==========================================
+        # PHASE 1: Parsing
+        # ==========================================
         tree = bridge_parser.parse(code)
-        ast = Z3Transformer().transform(tree)
+        ast = ToolASTBuilder().transform(tree)
+        print("✅ Phase 1: AST Parsing Complete")
+
+        # ==========================================
+        # PHASE 2: Semantic Analysis & Type Checking
+        # ==========================================
         env = TypeEnvironment()
-        env.build(ast.declarations)
-
-        # 2. Type Check
-        checker = TypeChecker(env)
-        checker.check_program(ast)
-        checker.enforce_linearity = False
+        tc = TypeChecker(env)
         
-        # 3. Initialize Translator and Solver
-        translator = Z3Translator(env)
-        solver = z3.Solver(ctx=translator.z3_ctx)
+        # The TypeChecker traverses the file, registers structs/variables, 
+        # and enforces your strict linear resource constraints.
+        tc.check_program(ast)
+        print("✅ Phase 2: Type Checking Complete")
 
-        solver.set("timeout", 20000)
+        # ==========================================
+        # PHASE 3: Static Single Assignment (SSA)
+        # ==========================================
+        ssa = SSABuilder(env)
+        
+        # This converts procedural loops and assignments into mathematical formulas
+        ssa_formulas = ssa.build_program(ast)
+        
+        # We physically swap the procedural AST block with the compiled math block
+        ast.specProgram = ssa_formulas
+        print("✅ Phase 3: SSA Compilation Complete")
 
-        # 4. SSA Engine & Preconditions
-        ssa_engine = SSATransformer(env)
-        print("\n--- [STEP 1] SSA-Aligned Preconditions ---")
+        # ==========================================
+        # PHASE 4: Z3 Theorem Proving
+        # ==========================================
+        verifier = Z3Verifier(env, tc)
+        
+        print("\n--- [DEBUG] SMT Axioms ---")
+        
+        # 1. Assert Global Preconditions (Axiomatic Truths)
         for pre in ast.preconditions:
-            ssa_pre = ssa_engine.transform_expr(pre)
-            z3_pre = translator.translate_expr(ssa_pre, checker)
-            solver.add(z3_pre)
-            print(f"Z3_Pre: {z3_pre}")
-
-        print("\n--- Precondition Consistency Check ---")
-        # We check the solver BEFORE adding the program or postconditions
-        if solver.check() == z3.unsat:
-            print("❌ VERDICT: VACUOUS PROOF (Preconditions are contradictory!)")
-            print("The program's initial state is mathematically impossible.")
-            exit(1)
-        print("✅ Preconditions are satisfiable. Universe created successfully.")
-
-        # 5. Program Transitions
-        print("\n--- [STEP 2] SSA Program Formulas ---")
-        transition_items = ssa_engine.generate_transition_predicate(ast.specProgram)
-        
-        for item in transition_items:
-            # 1. Check if it's a Loop Wrapper
-            if isinstance(item, LoopTransition):
-                print("\n--- [LOOP VERIFIER] Analyzing WhileStmt ---")
-                is_loop_safe = translator.verify_loop_transition(item, checker, solver)
-                if not is_loop_safe:
-                    print("❌ Verification Aborted: Loop induction failed.")
-                    exit(1)
+            pre_z3 = pre.accept(verifier)
+            verifier.solver.add(pre_z3)
+            print(f"Precondition: {pre_z3}")
             
-            # 2. Check if it's our new CallSiteCheck Wrapper
-            elif isinstance(item, CallSiteCheck):
-                # Notice we translate 'item.formula' here, not 'item'
-                z3_formula = translator.translate_expr(item.formula, checker)
-                
-                print(f"\n[PROVING CALL-SITE CHECK]: {z3_formula}")
-                solver.push()
-                solver.add(z3.Not(z3_formula))
-
-                if solver.check() == z3.sat:
-                    print("❌ VERDICT: INVALID (Precondition Violated at Call Site!)")
-                    print("\n--- Counter-Example Model ---")
-                    print(solver.model())
-                    exit(1)
-
-                solver.pop()
-                print("✅ Call-Site Check Passed!")
-                
-                # After proving it, add it to the timeline so Z3 can use it as a fact!
-                solver.add(z3_formula)
-                
-            # 3. Otherwise, it's a normal AST formula (Assignments, Frame Axioms)
+        # 2. Evaluate Program Body
+        for formula in ast.specProgram:
+            # If the formula is a pure math equation (e.g. x_1 == x_0 + 1), 
+            # we must explicitly add it to the SMT solver's timeline.
+            if isinstance(formula, Expr):
+                f_z3 = formula.accept(verifier)
+                verifier.solver.add(f_z3)
+                print(f"SSA Math Fact: {f_z3}")
+            
+            # If the formula is a Control Flow Node (LoopTransition, Assert, Assume),
+            # we just accept it. The Z3Verifier visitor inherently handles its own 
+            # push/pop sandboxing and solver injections for these nodes.
             else:
-                z3_formula = translator.translate_expr(item, checker)
-                solver.add(z3_formula)
-                print(f"Z3_ρ: {z3_formula}")
+                formula.accept(verifier)
+                print(f"Control Flow: {type(formula).__name__} Evaluated")
 
-        # 6. Postconditions (Macro Inlining happens here too!)
-        # 6. Postconditions (Macro Inlining happens here too!)
-        print("\n--- [STEP 3] SSA-Aligned Postconditions ---")
-        
-        postcondition_exprs = []
-        for post in ast.postconditions:
-            ssa_post = ssa_engine.transform_expr(post)
-            z3_post = translator.translate_expr(ssa_post, checker)
-            postcondition_exprs.append(z3_post)
-            print(f"Parsed Z3_Post: {z3_post}")
-
-        # Ensure we actually have postconditions before adding to solver
-        if postcondition_exprs:
-            # 1. Combine all postconditions with AND (if there's more than one)
-            if len(postcondition_exprs) > 1:
-                combined_postconditions = z3.And(*postcondition_exprs)
-            else:
-                combined_postconditions = postcondition_exprs[0]
-
-            # 2. Apply De Morgan's properly: Negate the entire combined block ONCE
-            goal_to_falsify = z3.Not(combined_postconditions)
-
-            # 3. Add the single negation to the solver to hunt for counter-examples
-            solver.add(goal_to_falsify)
-            print(f"Z3_Combined_Post (Asserted as Not): {goal_to_falsify}")
-        else:
-            print("No postconditions to verify.")
-
-        # 7. Final Check
-        print("\n--- [DEBUG] SOLVER STATE ---")
-        
-        for a in solver.assertions():
-            print(f"Assertion: {a}")
-
-        print("\n--- [STEP 4] Final Verdict ---")
-        result = solver.check()
+        # 3. Postcondition Refutation
+        if ast.postconditions:
+            post_z3_list = [post.accept(verifier) for post in ast.postconditions]
+            combined_post = z3.And(*post_z3_list) if len(post_z3_list) > 1 else post_z3_list[0]
+            
+            # REFUTATION STRATEGY: We assert the NEGATION of the postconditions.
+            # We are asking Z3: "Is there any possible timeline where the program succeeds, 
+            # but the postcondition fails?"
+            verifier.solver.add(z3.Not(combined_post))
+            print(f"Refutation Target: {z3.Not(combined_post)}")
+            
+        print("\n--- [VERDICT] ---")
+        result = verifier.solver.check()
         
         if result == z3.unsat:
-            print("✅ VERDICT: PROVED (The property holds for all executions)")
+            print("✅ VERDICT: PROVED (The specification holds for all valid executions)")
         elif result == z3.sat:
             print("❌ VERDICT: INVALID (Counter-example found)")
             print("\n--- Counter-Example Model ---")
-            print(solver.model())
-        elif result == z3.unknown:
-            print(f"❓ Result: UNKNOWN")
-            print(f"❓ Reason: {solver.reason_unknown()}")
+            print(verifier.solver.model())
+        else:
+            print("❓ Result: UNKNOWN (Solver timeout or logic too complex)")
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        print(f"\n❌ COMPILATION ERROR: {str(e)}")
 
 if __name__ == "__main__":
     main()

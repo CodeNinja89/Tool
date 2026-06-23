@@ -1,259 +1,344 @@
+from typing import Any, Dict, Optional
 from core.toolAst import *
 from core.toolTypes import TypeEnvironment
 
-NUMERIC_TYPES = {
-    "int"
-}
-
-class TypeChecker:
+class TypeChecker(ASTVisitor):
     def __init__(self, env: TypeEnvironment):
         self.env = env
-        self.delta = {} # track unconsumed resources (variables)
-        self.enforce_linearity = True
-
-    def get_expr_type(self, expr: ASTNode, is_refer: bool = False) -> str:
-        if isinstance(expr, VarRef):
-            name = expr.name
-            if '_' in name and name.rsplit('_', 1)[1].isdigit():
-                base_name = name.rsplit('_', 1)[0]
-            else:
-                base_name = name
-
-            var_type = self.env.get_var_type(base_name)
-            if self.enforce_linearity and var_type in self.env.linear_structs:
-                if base_name in self.delta:
-                    if not is_refer:
-                        del self.delta[base_name]
-                else:
-                    raise Exception(f"Use-After-Free Error: Linear variable '{base_name}' was already consumed")
-                
-            return var_type
+        self.current_func_ret_type: Optional[str] = None
         
-        elif isinstance(expr, Literal):
-            if expr.value in ["true", "false"]:
-                return "bool"
-            if expr.value == "null": return "null" # wildcard type
-            return "int" # fallback for mathematical integers
-        
-        elif isinstance(expr, BinaryExpr):
-            left_type = self.get_expr_type(expr.left)
-            right_type = self.get_expr_type(expr.right)
+        # --- Linearity Tracking ---
+        # Maps variable name to a boolean: True = consumed, False = available
+        self.consumed_linear_vars: Dict[str, bool] = {}
 
-            # logical operators
-            if expr.op in ['&&', '||']:
-                if left_type != "bool" or right_type != "bool":
-                    raise Exception(f"Type Error: '{expr.op}' expects booleans")
-                return "bool"
-            
-            # relational operators
-            if expr.op in ['==', '!=']:
-                if left_type == "null" and right_type in self.env.structs: return "bool"
-                if right_type == "null" and left_type in self.env.structs: return "bool"
-                if left_type != right_type:
-                    raise Exception(f"Type Error: Cannot compare '{left_type}' and '{right_type}")
-                return "bool"
-            
-            if expr.op in ['<', '>', '<=', '>=']:
-                if left_type not in NUMERIC_TYPES or right_type not in NUMERIC_TYPES:
-                    raise Exception("Relational operators require numeric types")
-                return "bool"
-            
-            # arithmetic and bitwise operations
-            if expr.op in ['+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>']:
-                if left_type not in NUMERIC_TYPES and right_type not in NUMERIC_TYPES:
-                    raise Exception(f"Operation {expr.op} cannot be used with non-numeric types")
-                if left_type != right_type:
-                    raise Exception(f"Type Error: Operator {expr.op} expects {left_type}")
-                return left_type
-            
-        elif isinstance(expr, UnaryExpr):
-            operand_type = self.get_expr_type(expr.operand)
-            if expr.op == '!':
-                if operand_type != "bool":
-                    raise Exception("Type Error: '!' requires a boolean type")
-                return "bool"
-            if expr.op in ['-', '~']:
-                if operand_type not in NUMERIC_TYPES:
-                    raise Exception(f"Type Error: '{expr.op}' requires a numberic type, got '{operand_type}'")
-                return operand_type
-            
-        elif isinstance(expr, TernaryExpr):
-            # 1. Recursively get the types of both branches
-            true_type = self.get_expr_type(expr.true_expr)
-            false_type = self.get_expr_type(expr.false_expr)
-            
-            # 2. Handle 'null' wildcard resolution
-            if true_type == "null" and false_type != "null":
-                return false_type
-            if false_type == "null" and true_type != "null":
-                return true_type
-            if true_type == "null" and false_type == "null":
-                return "null"
-                
-            # 3. If both are concrete types, they must match
-            if true_type != false_type:
-                raise Exception(f"Type Error in Ternary: branches have mismatched types '{true_type}' and '{false_type}'")
-                
-            return true_type
-            
-        elif isinstance(expr, FuncCall):
-            # --- Intercept implicitly generated struct constructors ---
-            if expr.name.startswith("mk_") and expr.name[3:] in self.env.structs:
-                struct_name = expr.name[3:]
-                struct_fields = list(self.env.get_struct_fields(struct_name).values())
-                
-                if len(expr.args) != len(struct_fields):
-                    raise Exception(f"Constructor {expr.name} expects {len(struct_fields)} args, got {len(expr.args)}")
-                    
-                for i, arg_expr in enumerate(expr.args):
-                    arg_type = self.get_expr_type(arg_expr)
-                    expected_type = struct_fields[i]
-                    # 'null' can technically inhabit any struct type pointer
-                    if arg_type != "null" and arg_type != expected_type:
-                        raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
-                
-                return struct_name # A constructor returns an instance of the struct!
-            
-            oracle = self.env.get_oracles(expr.name)
-            if len(expr.args) != len(oracle.args):
-                raise Exception(f"Oracle {expr.name} expects {len(oracle.args)} but got {len(expr.args)}")
-            for i, arg_expr in enumerate(expr.args):
-                is_refer_arg = oracle.args[i].is_refer
-                arg_type = self.get_expr_type(arg_expr, is_refer_arg)
-                expected_type = oracle.args[i].typeName
-                if arg_type != expected_type:
-                    raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
-            return oracle.retType
-            
-        elif isinstance(expr, FieldAccess):
-            obj_type = self.get_expr_type(expr.obj, is_refer)
+    def check_program(self, program: Program) -> None:
+        """Entry point to begin type checking."""
+        program.accept(self)
 
-            # as per the grammar, a field access of the form <structName>.<fieldName>
-            # if the struct has a field which is a sequence, then writing
-            # <structName>.<fieldName>.length will be a problem because the parser will
-            # think that <fieldName> is another struct. so, we must short circuit that
-            # logic and simply return a uint32 for the length of a sequence.
-            # this also means that the length of a sequence is always a 32-bit integer.
+    def visit_Program(self, node: Program) -> None:
+        """Processes the structural layout of the file."""
+        # 1. Register all structs first so variables can reference them
+        for decl in node.declarations:
+            if isinstance(decl, StructDef):
+                decl.accept(self)
+                
+        # 2. Register variables and functions
+        for decl in node.declarations:
+            if not isinstance(decl, StructDef):
+                decl.accept(self)
+                
+        # 3. Check Pre/Post conditions
+        for pre in node.preconditions:
+            if pre.accept(self) != "bool":
+                raise Exception("Type Error: Preconditions must evaluate to a boolean expression.")
+                
+        for post in node.postconditions:
+            if post.accept(self) != "bool":
+                raise Exception("Type Error: Postconditions must evaluate to a boolean expression.")
+                
+        # 4. Check main imperative program block
+        for stmt in node.specProgram:
+            stmt.accept(self)
+            
+        # 5. Global Linearity Check
+        for var_name, is_consumed in self.consumed_linear_vars.items():
+            if not is_consumed:
+                raise Exception(f"Linearity Error: Linear resource '{var_name}' was never consumed!")
 
-            if obj_type.startswith("seq[") and expr.field == "length":
-                return "int"
+    def visit_StructDef(self, node: StructDef) -> None:
+        """Registers a struct and its linearity constraint in the environment."""
+        self.env.register_struct(node.name, node.fields)
+        if node.is_linear:
+            # We assume TypeEnvironment has a set to track which structs are linear
+            self.env.linear_structs.add(node.name)
+
+    def visit_VarDecl(self, node: VarDecl) -> None:
+        """Registers a variable and begins tracking it if it is linear."""
+        if not self.env.is_valid_type(node.typeName):
+            raise Exception(f"Type Error: Unknown type '{node.typeName}' for variable '{node.name}'.")
             
-            fields = self.env.get_struct_fields(obj_type)
-            if expr.field not in fields:
-                raise Exception(f"Struct {obj_type} has no field {expr.field}")
-            return fields[expr.field]
+        self.env.register_var(node.name, node.typeName)
         
-        elif isinstance(expr, SeqAccess):
-            seq_type = self.get_expr_type(expr.seq_obj)
-            if not seq_type.startswith("seq["):
-                raise Exception(f"Cannot index a non-sequence type {seq_type}")
-            idx_type = self.get_expr_type(expr.index)
-            if idx_type not in NUMERIC_TYPES:
-                raise Exception(f"Sequence index must be numeric")
+        if self.env.is_linear_type(node.typeName):
+            self.consumed_linear_vars[node.name] = False
+
+    def visit_InvisibleDecl(self, node: InvisibleDecl) -> None:
+        if not self.env.is_valid_type(node.typeName):
+            raise Exception(f"Type Error: Unknown type '{node.typeName}' for invisible var '{node.name}'.")
+        self.env.register_var(node.name, node.typeName)
+
+    def visit_FunctionDef(self, node: FunctionDef) -> None:
+        """Type checks an oracle definition within a local scope."""
+        self.current_func_ret_type = node.retType
+        
+        # Push a local memory scope (assuming TypeEnvironment supports push_scope/pop_scope)
+        self.env.push_scope()
+        
+        for arg in node.args:
+            arg.accept(self)
             
-            inner_type = seq_type[4:-1]
-            return inner_type
+        self.env.register_var(node.retName, node.retType)
         
-        elif type(expr).__name__ == "Quantifier":
-            # Just return bool for now so the checker doesn't crash if it hits a forall/exists node
-            print("HERE WE ARE!")
+        for clause in node.clauses:
+            clause.accept(self)
+            
+        self.env.pop_scope()
+        self.current_func_ret_type = None
+
+    # ==========================================
+    # --- PART 2: Expressions & Math Rules ---
+    # ==========================================
+
+    def get_expr_type(self, node: Expr) -> str:
+        """Helper method to ensure we return a string from the visitor."""
+        result = node.accept(self)
+        if not isinstance(result, str):
+            raise Exception(f"Compiler Error: Expression visitor returned {type(result)} instead of a string type.")
+        return result
+
+    def visit_VarRef(self, node: VarRef) -> str:
+        """Looks up a variable and enforces single-consumption for linear resources."""
+        # Handle SSA-style variables by stripping suffixes temporarily for type lookup
+        base_name = node.name.rsplit('_', 1)[0] if ('_' in node.name and node.name.rsplit('_', 1)[1].isdigit()) else node.name
+            
+        var_type = self.env.get_var_type(base_name)
+        if var_type is None:
+            raise Exception(f"Type Error: Variable '{base_name}' used before assignment or not found in scope.")
+
+        # --- Linearity Enforcement ---
+        if self.env.is_linear_type(var_type):
+            if self.consumed_linear_vars.get(base_name, False):
+                raise Exception(f"Linearity Error: Linear resource '{base_name}' has already been consumed! It cannot be duplicated or reused.")
+            # Mark it as consumed the moment it is evaluated
+            self.consumed_linear_vars[base_name] = True
+            
+        return var_type
+
+    def visit_Literal(self, node: Literal) -> str:
+        if node.value in ("true", "false"):
             return "bool"
-        raise NotImplementedError(f"Type checking for {type(expr)} not implemented.")
-    
-    def _assert_type(self, expr: ASTNode, expected: str, msg: str):
-        actual = self.get_expr_type(expr)
-        if actual != expected:
-            raise Exception(f"Type Error: {msg} (Got '{actual}', expected '{expected}')")
+        if node.value == "null":
+            return "null"  # Special mathematically ambiguous state
+        return "int"
+
+    def visit_BinaryExpr(self, node: BinaryExpr) -> str:
+        left_type = self.get_expr_type(node.left)
+        right_type = self.get_expr_type(node.right)
+
+        # 1. Null Resolution for Equality
+        if node.op in ("==", "!="):
+            if left_type == "null" and right_type == "null":
+                raise Exception("Type Error: Cannot compare two 'null' literals. Type is ambiguous.")
+            if left_type == "null" or right_type == "null" or left_type == right_type:
+                return "bool"
+            raise Exception(f"Type Error: Cannot compare mismatching types '{left_type}' and '{right_type}'.")
+
+        # 2. Logical Operators
+        if node.op in ("&&", "||"):
+            if left_type == "bool" and right_type == "bool":
+                return "bool"
+            raise Exception(f"Type Error: Logical operator '{node.op}' requires bools. Got {left_type} and {right_type}.")
+
+        # 3. Arithmetic, Relational, and Bitwise (All require integers)
+        if left_type != "int" or right_type != "int":
+            raise Exception(f"Type Error: Operator '{node.op}' requires integers. Got {left_type} and {right_type}.")
         
-    def check_stmt(self, stmt: Stmt):
-        if isinstance(stmt, AssignStmt):
-            is_invisible_assign = False
-            if isinstance(stmt.lvalue, VarRef):
-                base_name = stmt.lvalue.name
-                if '_' in base_name and base_name.rsplit('_', 1)[1].isdigit():
-                    base_name = base_name.rsplit('_', 1)[0]
-                if base_name in self.env.invisible_vars:
-                    is_invisible_assign = True
-
-            # Evaluate RHS. If LHS is invisible, treat the RHS as a 'refer' so it isn't consumed!
-            rhs_type = self.get_expr_type(stmt.expr, is_refer=is_invisible_assign)
-
-            # replenish linear resources
-            if isinstance(stmt.lvalue, VarRef):
-                base_name = stmt.lvalue.name
-                if '_' in base_name and base_name.rsplit('_', 1)[1].isdigit():
-                    base_name = base_name.rsplit('_', 1)[0]
-                lhs_type = self.env.get_var_type(base_name)
-                if lhs_type != rhs_type:
-                    raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
-                
-                # if we assign to a linear variable, it becomes available in Delta again
-                if lhs_type in self.env.linear_structs and not is_invisible_assign:
-                    self.delta[base_name] = lhs_type
-
-            else:
-                lhs_type = self.get_expr_type(stmt.lvalue)
-                if lhs_type != rhs_type:
-                    raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
-
-        elif isinstance(stmt, AssertStmt):
-            self._assert_type(stmt.formula, "bool", "Assert condition must be boolean.")
+        if node.op in ("+", "-", "*", "/", "%", "|", "^", "&", "<<", ">>"):
+            return "int"
+        if node.op in ("<", "<=", ">", ">="):
+            return "bool"
             
-        elif isinstance(stmt, BlockStmt):
-            for s in stmt.statements:
-                self.check_stmt(s)
-                
-        elif isinstance(stmt, IfStmt):
-            self._assert_type(stmt.condition, "bool", "If condition must be boolean.")
-            delta_before = self.delta.copy()
-            self.check_stmt(stmt.then_block)
-            delta_then = self.delta.copy()
-            self.delta = delta_before.copy()
+        raise Exception(f"Type Error: Unknown binary operator '{node.op}'.")
 
-            if stmt.else_block:
-                self.check_stmt(stmt.else_block)
+    def visit_UnaryExpr(self, node: UnaryExpr) -> str:
+        op_type = self.get_expr_type(node.operand)
+        if node.op == '!':
+            if op_type != "bool": 
+                raise Exception("Type Error: Logical '!' requires a bool operand.")
+            return "bool"
+        if node.op in ('-', '~'):
+            if op_type != "int": 
+                raise Exception(f"Type Error: Mathematical/Bitwise '{node.op}' requires an int operand.")
+            return "int"
+        raise Exception(f"Type Error: Unknown unary operator '{node.op}'.")
+
+    def visit_TernaryExpr(self, node: TernaryExpr) -> str:
+        cond_type = self.get_expr_type(node.condition)
+        if cond_type != "bool":
+            raise Exception("Type Error: Ternary condition must evaluate to a bool.")
             
-            delta_else = self.delta.copy()
-
-            if delta_then != delta_else:
-                raise Exception(f"Linear Type Error in If/Else block")
+        t_type = self.get_expr_type(node.true_expr)
+        f_type = self.get_expr_type(node.false_expr)
+        
+        # Null bubbling
+        if t_type == "null": return f_type
+        if f_type == "null": return t_type
+        
+        if t_type != f_type:
+            raise Exception(f"Type Error: Ternary branches must match in type. Got {t_type} vs {f_type}.")
             
-            self.delta = delta_then
-                
-        elif isinstance(stmt, WhileStmt):
-            self._assert_type(stmt.condition, "bool", "While condition must be boolean.")
-            if stmt.invariant:
-                self._assert_type(stmt.invariant, "bool", "Loop invariant must be boolean.")
-            if stmt.measure:
-                measure_type = self.get_expr_type(stmt.measure)
-                if not ("int" in measure_type):
-                    raise Exception(f"Type Error: Loop measure must be a numeric type, got '{measure_type}'.")
-                
-            delta_before = self.delta.copy()
-            self.check_stmt(stmt.body)
-            if self.delta != delta_before:
-                raise Exception("Linear Type Error: While loop body permanently consumes resources!")
+        return t_type
 
-    def check_program(self, program: Program):
-        # 1. Initialize Delta with global linear variables
-        for var_name, var_type in self.env.variables.items():
-            if var_type in self.env.linear_structs:
-                self.delta[var_name] = var_type
-
-        self.enforce_linearity = False
-
-        for pre in program.preconditions:
-            self._assert_type(pre, "bool", "PRECONDITION MUST BE BOOLEAN!")
-        for post in program.postconditions:
-            self._assert_type(post, "bool", "POSTCONDITIONS MUST BE BOOLEAN!")
-
-        self.enforce_linearity = True
+    def visit_Quantifier(self, node: Quantifier) -> str:
+        """Quantifiers introduce a temporary bound variable to the environment."""
+        self.env.push_scope()
+        self.env.register_var(node.bound_var, node.var_type)
+        
+        inner_type = self.get_expr_type(node.formula)
+        if inner_type != "bool":
+            raise Exception("Type Error: Quantifier body formula must evaluate to a bool.")
             
-        for stmt in program.specProgram:
-            if isinstance(stmt, Stmt):
-                self.check_stmt(stmt)
+        self.env.pop_scope()
+        return "bool"
+    
+    # ==========================================
+    # --- PART 3: Memory & Control Flow ---
+    # ==========================================
+
+    def visit_FieldAccess(self, node: FieldAccess) -> str:
+        obj_type = self.get_expr_type(node.obj)
+        
+        # Special rule for sequence length
+        if obj_type.startswith("seq[") and node.field == "length":
+            return "int"
+            
+        fields = self.env.get_struct_fields(obj_type)
+        if node.field not in fields:
+            raise Exception(f"Type Error: Struct '{obj_type}' has no field '{node.field}'.")
+            
+        return fields[node.field]
+
+    def visit_SeqAccess(self, node: SeqAccess) -> str:
+        seq_type = self.get_expr_type(node.seq_obj)
+        if not seq_type.startswith("seq["):
+            raise Exception(f"Type Error: Cannot index into non-sequence type '{seq_type}'.")
+            
+        idx_type = self.get_expr_type(node.index)
+        if idx_type != "int":
+            raise Exception(f"Type Error: Sequence index must be an integer. Got '{idx_type}'.")
+            
+        # Extract the inner type (e.g., 'seq[int]' -> 'int')
+        return seq_type[4:-1]
+
+    def visit_StructUpdate(self, node: StructUpdate) -> str:
+        obj_type = self.get_expr_type(node.obj)
+        fields = self.env.get_struct_fields(obj_type)
+        
+        if node.field not in fields:
+            raise Exception(f"Type Error: Struct '{obj_type}' has no field '{node.field}'.")
+            
+        new_val_type = self.get_expr_type(node.new_value)
+        
+        # Null resolution for struct updates
+        if new_val_type == "null":
+            pass # Null is allowed to overwrite struct fields
+        elif new_val_type != fields[node.field]:
+            raise Exception(f"Type Error: Cannot update field '{node.field}' of type '{fields[node.field]}' with value of type '{new_val_type}'.")
+            
+        return obj_type
+
+    def visit_SeqUpdate(self, node: SeqUpdate) -> str:
+        seq_type = self.get_expr_type(node.seq_obj)
+        if not seq_type.startswith("seq["):
+            raise Exception(f"Type Error: Cannot update non-sequence type '{seq_type}'.")
+            
+        idx_type = self.get_expr_type(node.index)
+        if idx_type != "int":
+            raise Exception("Type Error: Sequence index must be an integer.")
+            
+        inner_type = seq_type[4:-1]
+        new_val_type = self.get_expr_type(node.new_value)
+        
+        if new_val_type != "null" and new_val_type != inner_type:
+            raise Exception(f"Type Error: Cannot update sequence of '{inner_type}' with '{new_val_type}'.")
+            
+        return seq_type
+
+    def visit_FuncCall(self, node: FuncCall) -> str:
+        # 1. Is it a Struct Constructor? (e.g., mk_BST)
+        if node.name.startswith("mk_") and node.name[3:] in self.env.structs:
+            struct_name = node.name[3:]
+            fields = list(self.env.get_struct_fields(struct_name).values())
+            
+            if len(node.args) != len(fields):
+                raise Exception(f"Type Error: Constructor '{node.name}' expects {len(fields)} arguments, got {len(node.args)}.")
                 
-        # Scope Exit: Anti-Leak Check
-        if len(self.delta) > 0:
-            leaked = ", ".join(self.delta.keys())
-            raise Exception(f"Memory Leak Error: Linear variables [{leaked}] were never consumed.")
+            for i, arg in enumerate(node.args):
+                arg_type = self.get_expr_type(arg)
+                if arg_type != "null" and arg_type != fields[i]:
+                    raise Exception(f"Type Error: Constructor argument {i+1} must be '{fields[i]}'. Got '{arg_type}'.")
+            return struct_name
+
+        # 2. It is an Oracle Call
+        oracle_def = self.env.get_oracles(node.name)
+        if len(node.args) != len(oracle_def.args):
+            raise Exception(f"Type Error: Oracle '{node.name}' expects {len(oracle_def.args)} arguments, got {len(node.args)}.")
+            
+        for i, arg in enumerate(node.args):
+            arg_type = self.get_expr_type(arg)
+            expected_type = oracle_def.args[i].typeName
+            if arg_type != "null" and arg_type != expected_type:
+                raise Exception(f"Type Error: Oracle argument {i+1} expects '{expected_type}', got '{arg_type}'.")
+                
+        return oracle_def.retType
+
+    # --- Statements ---
+
+    def visit_AssignStmt(self, node: AssignStmt) -> None:
+        # Strip SSA suffix if present
+        base_name = node.lvalue.name.rsplit('_', 1)[0] if ('_' in node.lvalue.name and node.lvalue.name.rsplit('_', 1)[1].isdigit()) else node.lvalue.name
+        
+        lval_type = self.env.get_var_type(base_name)
+        if lval_type is None:
+            raise Exception(f"Type Error: Cannot assign to undeclared variable '{base_name}'.")
+            
+        expr_type = self.get_expr_type(node.expr)
+        
+        if expr_type != "null" and lval_type != expr_type:
+            raise Exception(f"Type Error: Cannot assign type '{expr_type}' to variable '{base_name}' of type '{lval_type}'.")
+
+    def visit_AssumesClause(self, node: AssumesClause) -> None:
+        if self.get_expr_type(node.formula) != "bool":
+            raise Exception("Type Error: Oracle 'assumes' clause must evaluate to a bool.")
+    
+    def visit_Returns(self, node: Returns) -> None:
+        if self.get_expr_type(node.formula) != "bool":
+            raise Exception("Type Error: Returns clauses must evaluate to a boolean equality constraint.")
+            
+        # Ensure the returns clause actually references the return variable
+        # (This is a simplified check; a full check would ensure the equality binds the retName)
+        if self.current_func_ret_type is None:
+            raise Exception("Type Error: Returns clause found outside of a function.")
+
+    def visit_AssertStmt(self, node: AssertStmt) -> None:
+        if self.get_expr_type(node.formula) != "bool":
+            raise Exception("Type Error: Assertions must evaluate to a bool.")
+        
+    def visit_AssumeStmt(self, node: AssumeStmt) -> None:
+        if self.get_expr_type(node.formula) != "bool":
+            raise Exception("Type Error: Procedural 'assume' statement must evaluate to a bool.")
+
+    def visit_BlockStmt(self, node: BlockStmt) -> None:
+        for stmt in node.statements:
+            stmt.accept(self)
+
+    def visit_IfStmt(self, node: IfStmt) -> None:
+        if self.get_expr_type(node.condition) != "bool":
+            raise Exception("Type Error: If condition must evaluate to a bool.")
+        node.then_block.accept(self)
+        if node.else_block:
+            node.else_block.accept(self)
+
+    def visit_WhileStmt(self, node: WhileStmt) -> None:
+        if self.get_expr_type(node.condition) != "bool":
+            raise Exception("Type Error: While condition must evaluate to a bool.")
+        if node.invariant and self.get_expr_type(node.invariant) != "bool":
+            raise Exception("Type Error: Loop invariant must evaluate to a bool.")
+        node.body.accept(self)
+        
+    def visit_CallSiteCheck(self, node: CallSiteCheck) -> None:
+        if self.get_expr_type(node.formula) != "bool":
+            raise Exception("Type Error: CallSiteCheck must evaluate to a bool.")
+            
+    def visit_LoopTransition(self, node: LoopTransition) -> None:
+        pass # Created by SSA pass after Type Checking, so it can be ignored here

@@ -1,6 +1,6 @@
 from core.toolTypes import TypeEnvironment
 from core.toolAst import *
-from typing import Dict
+from typing import Dict, Optional
 
 class ASTSubstitutor:
     def __init__(self, substitution_map: Dict[str, Expr]):
@@ -100,7 +100,8 @@ class OracleManager:
             return False
         
         for clause in oracle_def.clauses:
-            if isinstance(clause, Assume):
+            # ---> UPDATED: Now checks for AssumesClause instead of Assume
+            if isinstance(clause, AssumesClause):
                 if check_node(clause.formula): return True
 
             elif isinstance(clause, Returns):
@@ -113,12 +114,12 @@ class OracleManager:
 
         # look up the oracle definition
         if oracle_name not in self.env.oracles:
-            raise Exception(f"Oralce {oracle_name} is not defined!")
+            raise Exception(f"Oracle '{oracle_name}' is not defined!")
         oracle_def = self.env.oracles[oracle_name]
 
         # check the number of arguments
         if len(func_call.args) != len(oracle_def.args):
-            raise Exception(f"{oracle_name} expects {len(func_call.args)} arguments!")
+            raise Exception(f"Oracle '{oracle_name}' expects {len(oracle_def.args)} arguments, but got {len(func_call.args)}!")
         
         sub_map: Dict[str, Expr] = {} # the substitution map
 
@@ -136,7 +137,8 @@ class OracleManager:
         returns_expr: Optional[Expr] = None
 
         for clause in oracle_def.clauses:
-            if isinstance(clause, Assume):
+            # ---> UPDATED: Now checks for AssumesClause instead of Assume
+            if isinstance(clause, AssumesClause):
                 assumes_expr = clause.formula
             elif isinstance(clause, Returns):
                 returns_expr = clause.formula

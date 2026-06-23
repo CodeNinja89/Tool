@@ -1,108 +1,80 @@
 from lark import Lark, Transformer, v_args
 from core.toolAst import *
 
-class Z3Transformer(Transformer):
+class ToolASTBuilder(Transformer):
+    """
+    Transforms the LARK parse tree directly into the Object-Oriented AST.
+    This class performs NO semantic checking. It only builds data structures.
+    """
 
     def start(self, items):
-        # items[0] is the result of structured_program
         return items[0]
 
     def structured_program(self, items):
         return Program(
-            declarations = items[0],
-            preconditions = items[1],
-            postconditions = items[2],
-            specProgram = items[3]
+            declarations = items[0] if items[0] else [],
+            preconditions = items[1] if items[1] else [],
+            postconditions = items[2] if items[2] else [],
+            specProgram = items[3] if items[3] else []
         )
     
     # --- Sections ---
-    
-    def declarations_section(self, items):
-        return items
-    def preconditions_section(self, items):
-        return items
-    def postconditions_section(self, items):
-        return items
-    def program_section(self, items):
-        return items
+    def declarations_section(self, items): return items
+    def preconditions_section(self, items): return items
+    def postconditions_section(self, items): return items
+    def program_section(self, items): return items
     
     # --- Declarations ---
-    
     def var_decl(self, items):
-        name = str(items[0])
-        typeName = str(items[1])
-        return VarDecl(name, typeName, False)
+        return VarDecl(name=str(items[0]), typeName=str(items[1]), is_refer=False)
+        
+    def const_decl(self, items):
+        # Constants are treated structurally as variables here. 
+        # The TypeChecker visitor will enforce their immutability later.
+        return VarDecl(name=str(items[0]), typeName=str(items[1]), is_refer=False)
     
     def struct_def(self, items):
-        # items[0] is always reserved for the optional [LINEAR] token.
-        # It will be None if the user didn't write 'linear'.
         is_linear = items[0] is not None
-        
-        # items[1] is always the struct name
         struct_name = str(items[1])
         
         fields = {}
-        # Fields now reliably start at index 2 and alternate (name, type)
         for i in range(2, len(items), 2):
-            field_name = str(items[i])
-            field_type = str(items[i + 1])
-            fields[field_name] = field_type
+            fields[str(items[i])] = str(items[i + 1])
             
-        return StructDef(struct_name, fields, is_linear)
+        return StructDef(name=struct_name, fields=fields, is_linear=is_linear)
     
     def invisible_decl(self, items):
-        name = str(items[1])
-        typeName = str(items[2])
-        return InvisibleDecl(name, typeName)
+        return InvisibleDecl(name=str(items[1]), typeName=str(items[2]))
     
     # --- Types ---
+    def base_type(self, items): return str(items[0])
+    def user_type(self, items): return str(items[0])
+    def seq_type(self, items): return f"seq[{items[0]}]"
     
-    def base_type(self, items):
-        return str(items[0])
-    
-    def user_type(self, items):
-        return str(items[0])
-    
-    def seq_type(self, items):
-        return f"seq[{items[0]}]" # Simple string representation for now
-    
-    # --- Function Definitions ---
-    
+    # --- Function Definitions (Oracles) ---
     def function_def(self, items):
-        # Grammar: "oracle" NAME "(" [arg_list] ")" "->" NAME ":" type "{" function_body "}"
-        # [name, arg_list_opt, ret_name, ret_type, body]
-
         name = str(items[0])
         args = items[1] if items[1] is not None else []
         retName = str(items[2])
         retType = str(items[3])
-        clauses = items[4]
+        clauses = items[4] if items[4] else []
 
         return FunctionDef(name, args, retName, retType, clauses)
     
-    def arg_list(self, items):
-        return items
+    def arg_list(self, items): return items
     
     def arg(self, items):
-        # items[0] is always reserved for the optional [REFER] token.
         is_refer = items[0] is not None
-        
-        # items[1] is always the argument name, and items[2] is always the type
         return VarDecl(name=str(items[1]), typeName=str(items[2]), is_refer=is_refer)
     
-    def function_body(self, items):
-        return items
+    def function_body(self, items): return items
     
-    # --- Clauses --
+    def func_assumes(self, items): 
+        return AssumesClause(formula=items[0])
+    
+    def func_returns(self, items): return Returns(formula=items[0])
 
-    def func_assumes(self, items):
-        return Assume(formula=items[0])
-    
-    def func_returns(self, items):
-        return Returns(formula=items[0])
-        
-    # --- Formulas (Simple String Pass-through) ---
-    # We will convert logic to strings temporarily to test the AST structure
+    # --- Formulas & Mathematical Operators ---
     
     def eq(self, items): return BinaryExpr(items[0], '==', items[1])
     def neq(self, items): return BinaryExpr(items[0], '!=', items[1])
@@ -122,31 +94,6 @@ class Z3Transformer(Transformer):
     def not_f(self, items): return UnaryExpr('!', items[0])
     def neg(self, items): return UnaryExpr('-', items[0])
 
-    def ite_expr(self, items):
-        return TernaryExpr(condition = items[0], true_expr=items[1], false_expr=items[2])
-    
-    def forall_f(self, items):
-        bound_var = str(items[0])
-        var_type = str(items[1])
-        inner_expr = items[2]
-        return Quantifier(
-            quant_type="forall",
-            bound_var=bound_var,
-            var_type=var_type,
-            formula=inner_expr
-        )
-    
-    def exists_f(self, items):
-        bound_var = str(items[0])
-        var_type = str(items[1])
-        inner_expr = items[2]
-        return Quantifier(
-            quant_type="exists",
-            bound_var=bound_var,
-            var_type=var_type,
-            formula=inner_expr
-        )
-
     def bit_or_op(self, items): return BinaryExpr(items[0], '|', items[1])
     def bit_xor_op(self, items): return BinaryExpr(items[0], '^', items[1])
     def bit_and_op(self, items): return BinaryExpr(items[0], '&', items[1])
@@ -154,66 +101,69 @@ class Z3Transformer(Transformer):
     def shr(self, items): return BinaryExpr(items[0], '>>', items[1])
     def bit_not(self, items): return UnaryExpr('~', items[0])
 
-    # base of the tree
-    def number(self, items):
-        return Literal(value=str(items[0]))
+    def ite_expr(self, items):
+        return TernaryExpr(condition=items[0], true_expr=items[1], false_expr=items[2])
     
-    def true_lit(self, items):
-        return Literal("true")
-    def false_lit(self, items):
-        return Literal("false")
-    def lvalue(self, items):
-        base_expr = VarRef(str(items[0]))
+    def forall_f(self, items):
+        return Quantifier("forall", str(items[0]), str(items[1]), items[2])
+    
+    def exists_f(self, items):
+        return Quantifier("exists", str(items[0]), str(items[1]), items[2])
 
-        if len(items) == 1:
-            return base_expr # this is a normal variable
-        
-        # else we have a chain of accesses
-        current_expr = base_expr
+    # --- Base Values & Memory Access ---
+    
+    def number(self, items): return Literal(value=str(items[0]))
+    def true_lit(self, items): return Literal("true")
+    def false_lit(self, items): return Literal("false")
+    def null_lit(self, items): return Literal("null")
+
+    def lvalue(self, items):
+        """Translates chained variable, array, and struct field accesses."""
+        current_expr = VarRef(str(items[0]))
+
         for modifier in items[1:]:
+            # If the modifier was parsed as an expression, it is a sequence index (e.g., [i])
             if isinstance(modifier, Expr):
-                # it's a sequence index
                 current_expr = SeqAccess(seq_obj=current_expr, index=modifier)
+            # Otherwise, it is a struct field access (e.g., .left)
             else:
                 current_expr = FieldAccess(obj=current_expr, field=str(modifier))
+                
         return current_expr
-    
-    def null_lit(self, items):
-        return Literal("null")
     
     def func_call(self, items):
         name = str(items[0])
         args = items[1] if len(items) > 1 and items[1] is not None else []
-        return FuncCall(name, args)
+        return FuncCall(name=name, args=args)
     
-    def expr_list(self, items):
-        return items
+    def expr_list(self, items): return items
+    
+    # --- Imperative Statements ---
     
     def assign_stmt(self, items):
-        return AssignStmt(items[0], items[1])
+        return AssignStmt(lvalue=items[0], expr=items[1])
+    
+    def assume_stmt(self, items):
+        return AssumeStmt(formula=items[0])
     
     def assert_stmt(self, items):
-        return AssertStmt(items[0])
+        return AssertStmt(formula=items[0])
     
     def block_stmt(self, items):
-        return BlockStmt(items)
+        return BlockStmt(statements=items)
     
     def if_stmt(self, items):
         condition = items[0]
         then_block = items[1]
         else_block = items[2] if len(items) > 2 else None
-        return IfStmt(condition, then_block, else_block)
+        return IfStmt(condition=condition, then_block=then_block, else_block=else_block)
     
     def while_stmt(self, items):
+        """Simplified While statement logic relying strictly on Hoare invariants."""
         condition = items[0]
         body = items[-1]
-        invariant = None
-        measure = None
-
-        if len(items) == 3:
-            invariant = items[1]
-        elif len(items) == 4:
-            invariant = items[1]
-            measure = items[2]
-
-        return WhileStmt(condition, invariant, measure, body)
+        # Because we removed 'measure' from the grammar, the items list is either 
+        # length 2 (condition, body) or length 3 (condition, invariant, body).
+        invariant = items[1] if len(items) == 3 else None
+        
+        return WhileStmt(condition=condition, invariant=invariant, body=body)

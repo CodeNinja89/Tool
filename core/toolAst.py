@@ -17,35 +17,37 @@ class ASTVisitor:
     Abstract base visitor class for traversing the TOOL AST.
     All concrete visitors (like Z3Translator or TypeChecker) will inherit from this.
     """
-    def visit_Program(self, node: 'Program'): pass
-    def visit_VarDecl(self, node: 'VarDecl'): pass
-    def visit_InvisibleDecl(self, node: 'InvisibleDecl'): pass
-    def visit_StructDef(self, node: 'StructDef'): pass
-    def visit_FunctionDef(self, node: 'FunctionDef'): pass
+    def visit_Program(self, node: 'Program') -> Any: pass
+    def visit_VarDecl(self, node: 'VarDecl') -> Any: pass
+    def visit_InvisibleDecl(self, node: 'InvisibleDecl') -> Any: pass
+    def visit_StructDef(self, node: 'StructDef') -> Any: pass
+    def visit_FunctionDef(self, node: 'FunctionDef') -> Any: pass
 
     # Expressions
-    def visit_BinaryExpr(self, node: 'BinaryExpr'): pass
-    def visit_TernaryExpr(self, node: 'TernaryExpr'): pass
-    def visit_UnaryExpr(self, node: 'UnaryExpr'): pass
-    def visit_Quantifier(self, node: 'Quantifier'): pass
-    def visit_VarRef(self, node: 'VarRef'): pass
-    def visit_Literal(self, node: 'Literal'): pass
-    def visit_FuncCall(self, node: 'FuncCall'): pass
-    def visit_FieldAccess(self, node: 'FieldAccess'): pass
-    def visit_SeqAccess(self, node: 'SeqAccess'): pass
-    def visit_StructUpdate(self, node: 'StructUpdate'): pass
-    def visit_SeqUpdate(self, node: 'SeqUpdate'): pass
-    def visit_LoopTransition(self, node: 'LoopTransition'): pass
-    def visit_CallSiteCheck(self, node: 'CallSiteCheck'): pass
+    def visit_BinaryExpr(self, node: 'BinaryExpr') -> Any: pass
+    def visit_TernaryExpr(self, node: 'TernaryExpr') -> Any: pass
+    def visit_UnaryExpr(self, node: 'UnaryExpr') -> Any: pass
+    def visit_Quantifier(self, node: 'Quantifier') -> Any: pass
+    def visit_VarRef(self, node: 'VarRef') -> Any: pass
+    def visit_Literal(self, node: 'Literal') -> Any: pass
+    def visit_FuncCall(self, node: 'FuncCall') -> Any: pass
+    def visit_FieldAccess(self, node: 'FieldAccess') -> Any: pass
+    def visit_SeqAccess(self, node: 'SeqAccess') -> Any: pass
+    def visit_StructUpdate(self, node: 'StructUpdate') -> Any: pass
+    def visit_SeqUpdate(self, node: 'SeqUpdate') -> Any: pass
+    def visit_LoopTransition(self, node: 'LoopTransition') -> Any: pass
+    def visit_CallSiteCheck(self, node: 'CallSiteCheck') -> Any: pass
     
     # Statements / Formal Constructs
-    def visit_Assume(self, node: 'Assume'): pass
-    def visit_Returns(self, node: 'Returns'): pass
-    def visit_AssignStmt(self, node: 'AssignStmt'): pass
-    def visit_AssertStmt(self, node: 'AssertStmt'): pass
-    def visit_BlockStmt(self, node: 'BlockStmt'): pass
-    def visit_IfStmt(self, node: 'IfStmt'): pass
-    def visit_WhileStmt(self, node: 'WhileStmt'): pass
+    def visit_Returns(self, node: 'Returns') -> Any: pass
+    def visit_AssignStmt(self, node: 'AssignStmt') -> Any: pass
+    def visit_AssertStmt(self, node: 'AssertStmt') -> Any: pass
+    def visit_BlockStmt(self, node: 'BlockStmt') -> Any: pass
+    def visit_IfStmt(self, node: 'IfStmt') -> Any: pass
+    def visit_WhileStmt(self, node: 'WhileStmt') -> Any: pass
+
+    def visit_AssumesClause(self, node: 'AssumesClause') -> Any: pass
+    def visit_AssumeStmt(self, node: 'AssumeStmt') -> Any: pass
 
 @dataclass
 class ASTNode:
@@ -222,13 +224,6 @@ class CallSiteCheck(ASTNode):
         return visitor.visit_CallSiteCheck(self)
 
 @dataclass
-class Assume(ASTNode):
-    formula: Expr
-
-    def accept(self, visitor: 'ASTVisitor') -> Any:
-        return visitor.visit_Assume(self)
-
-@dataclass
 class Returns(ASTNode):
     formula: Expr
 
@@ -278,3 +273,17 @@ class WhileStmt(Stmt):
 
     def accept(self, visitor: 'ASTVisitor') -> Any:
         return visitor.visit_WhileStmt(self)
+    
+@dataclass
+class AssumesClause(ASTNode):
+    """Precondition for an Oracle."""
+    formula: Expr
+    def accept(self, visitor: 'ASTVisitor') -> Any:
+        return visitor.visit_AssumesClause(self)
+
+@dataclass
+class AssumeStmt(Stmt):
+    """Hoare logic statement injected into a procedural block."""
+    formula: Expr
+    def accept(self, visitor: 'ASTVisitor') -> Any:
+        return visitor.visit_AssumeStmt(self)
