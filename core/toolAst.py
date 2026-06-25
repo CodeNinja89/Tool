@@ -117,9 +117,6 @@ class LoopTransition(Expr):
     
     cond_read: Expr                # loop condition evaluated at start of loop
     
-    measure_read: Optional[Expr]   # measure evaluated at start of loop
-    measure_write: Optional[Expr]  # measure evaluated at end of loop
-    
     body_formulas: List[Expr]      # the mutated state transitions inside the loop
 
 @dataclass
@@ -161,5 +158,4 @@ class IfStmt(Stmt):
 class WhileStmt(Stmt):
     condition: Expr
     invariant: Optional[Expr]
-    measure: Optional[Expr]
     body: BlockStmt

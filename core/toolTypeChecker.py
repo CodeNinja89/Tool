@@ -224,10 +224,6 @@ class TypeChecker:
             self._assert_type(stmt.condition, "bool", "While condition must be boolean.")
             if stmt.invariant:
                 self._assert_type(stmt.invariant, "bool", "Loop invariant must be boolean.")
-            if stmt.measure:
-                measure_type = self.get_expr_type(stmt.measure)
-                if not ("int" in measure_type):
-                    raise Exception(f"Type Error: Loop measure must be a numeric type, got '{measure_type}'.")
                 
             delta_before = self.delta.copy()
             self.check_stmt(stmt.body)

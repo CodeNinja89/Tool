@@ -216,4 +216,4 @@ class Z3Transformer(Transformer):
             invariant = items[1]
             measure = items[2]
 
-        return WhileStmt(condition, invariant, measure, body)
+        return WhileStmt(condition, invariant, body)

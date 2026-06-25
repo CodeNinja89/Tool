@@ -245,7 +245,6 @@ class SSATransformer:
             read_scope = self.current_versions.copy()
             cond_read = self.transform_expr(node.condition)
             inv_read = self.transform_expr(cast(Expr, node.invariant)) if node.invariant else Literal("true")
-            measure_read = self.transform_expr(cast(Expr, node.measure)) if node.measure else None
 
             '''
                 We process the imperative statements inside the loop. The SSA engine naturally maps the 
@@ -271,7 +270,6 @@ class SSATransformer:
 
             write_scope = self.current_versions.copy()
             inv_write = self.transform_expr(cast(Expr, node.invariant)) if node.invariant else Literal("true")
-            measure_write = self.transform_expr(cast(Expr, node.measure)) if node.measure else None
 
             loop_transition = LoopTransition(
                 pre_loop_scope=pre_loop_scope,
@@ -281,8 +279,6 @@ class SSATransformer:
                 inv_read=inv_read,
                 inv_write=inv_write,
                 cond_read=cond_read,
-                measure_read=measure_read,
-                measure_write=measure_write,
                 body_formulas=body_formulas
             )
 

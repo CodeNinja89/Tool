@@ -42,7 +42,7 @@ assign_stmt: lvalue ":=" expr ";"
 assert_stmt: "assert" formula ";"
 block_stmt: "{" (statement)* "}"
 
-while_stmt: "while" "(" formula ")" ["invariant" formula] ["measure" expr] block_stmt
+while_stmt: "while" "(" formula ")" ["invariant" formula] block_stmt
 
 if_stmt: "if" "(" formula ")" block_stmt ["else" block_stmt]
 
