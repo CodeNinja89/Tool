@@ -36,7 +36,7 @@ function_body: (function_clause)*
                 | "returns" formula ";" -> func_returns
 
 // --- Specification Statements ---
-?statement: assign_stmt | while_stmt | if_stmt | assert_stmt | block_stmt | fact
+?statement: assign_stmt | while_stmt | if_stmt | assert_stmt | block_stmt | fact_stmt
 
 assign_stmt: lvalue ":=" expr ";"
 assert_stmt: "assert" formula ";"

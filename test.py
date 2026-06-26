@@ -7,7 +7,7 @@ from core.toolSSA import SSATransformer
 from core.toolTypes import TypeEnvironment
 from core.toolTypeChecker import TypeChecker
 from core.toolZ3 import Z3Translator
-from core.toolAst import LoopTransition, CallSiteCheck, AssertStmt
+from core.toolAst import FactStmt, LoopTransition, CallSiteCheck, AssertStmt
 
 def main():
     if len(sys.argv) < 2:
@@ -89,6 +89,37 @@ def main():
 
                 solver.pop()
                 print("✅ Call-Site Check Passed!")
+                
+                # After proving it, add it to the timeline so Z3 can use it as a fact!
+                solver.add(z3_formula)
+
+            elif isinstance(item, FactStmt):
+                print("\n--- [FACT VERIFIER] Analyzing FactStmt ---")
+                z3_formula = translator.translate_expr(item.formula, checker)
+                solver.add(z3_formula)
+
+                if solver.check() == z3.unsat: # check the consistency of the timeline after adding the fact
+                    print("❌ COMPILATION ERROR: Contradictory Mid-Program Fact!")
+                    print(f"The statement '{z3_formula}' contradicts the established state of the program up to this point.")
+                    print("Mathematically impossible scenario.")
+                    exit(1)
+                
+                print(f"✅ Fact Added to Timeline: {z3_formula}")
+
+            elif isinstance(item, AssertStmt):
+                print("\n--- [ASSERTION VERIFIER] Analyzing AssertStmt ---")
+                z3_formula = translator.translate_expr(item.formula, checker)
+                solver.push()
+                solver.add(z3.Not(z3_formula))
+
+                if solver.check() == z3.sat:
+                    print(f"❌ INVALID (Assertion Violated!): {z3_formula}")
+                    print("\n--- Counter-Example Model ---")
+                    print(solver.model())
+                    exit(1)
+
+                solver.pop()
+                print(f"✅ Assertion Check Passed!: {z3_formula}")
                 
                 # After proving it, add it to the timeline so Z3 can use it as a fact!
                 solver.add(z3_formula)

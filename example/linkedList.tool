@@ -98,6 +98,8 @@ alias2 := original_list; // alias2 takes ownership
 
 original_list := removeSorted(alias2, v); // updated list. 
 
+assert length(original_list) == length(temp);
+
 // the "original_list" on line 58 and original_list in line 78 are two distinct lists with the same label. similarly, the original_list is again consumed on line 81.
 // the one of line 58 does not exist any more. neither does the one at line 81.
 
