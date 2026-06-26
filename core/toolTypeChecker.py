@@ -198,7 +198,10 @@ class TypeChecker:
 
         elif isinstance(stmt, AssertStmt):
             self._assert_type(stmt.formula, "bool", "Assert condition must be boolean.")
-            
+
+        elif isinstance(stmt, FactStmt):
+            self._assert_type(stmt.formula, "bool", "Fact condition must be boolean.")
+
         elif isinstance(stmt, BlockStmt):
             for s in stmt.statements:
                 self.check_stmt(s)

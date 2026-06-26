@@ -199,7 +199,10 @@ class SSATransformer:
                 raise NotImplementedError(f"SSA for {type(node.lvalue)} not yet supported")
 
         elif isinstance(node, AssertStmt):
-            formulas.append(self.transform_expr(node.formula))
+            formulas.append(AssertStmt(self.transform_expr(node.formula)))
+        
+        elif isinstance(node, FactStmt):
+            formulas.append(self.transform_expr(node.formula)) # add a fact directly to the timeline. No need to prove it, it's a fact.
 
         elif isinstance(node, BlockStmt):
             for stmt in node.statements:

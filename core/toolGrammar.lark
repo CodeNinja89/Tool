@@ -36,10 +36,11 @@ function_body: (function_clause)*
                 | "returns" formula ";" -> func_returns
 
 // --- Specification Statements ---
-?statement: assign_stmt | while_stmt | if_stmt | assert_stmt | block_stmt
+?statement: assign_stmt | while_stmt | if_stmt | assert_stmt | block_stmt | fact
 
 assign_stmt: lvalue ":=" expr ";"
 assert_stmt: "assert" formula ";"
+fact_stmt: "fact" formula ";"
 block_stmt: "{" (statement)* "}"
 
 while_stmt: "while" "(" formula ")" ["invariant" formula] block_stmt

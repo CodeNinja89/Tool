@@ -4,6 +4,8 @@ linear struct List {
     next: List;
 }
 
+invisible temp: List;
+
 oracle destruct(l: List) -> ok: bool {
     returns ok == true;
 }
@@ -75,6 +77,7 @@ v: int;
 is_sorted(original_list);
 length(original_list) > 1;
 !contains(original_list, v);
+temp == original_list;
 
 %% postconditions
 
@@ -88,6 +91,7 @@ alias1 := original_list;
 // alias2 := original_list; // error... alias1 owns the list.
 
 original_list := insertSorted(alias1, v); // the original_list is updated.
+assert length(original_list) == length(temp) + 1;
 is_correct := is_sorted(original_list);
 
 alias2 := original_list; // alias2 takes ownership
@@ -100,3 +104,4 @@ original_list := removeSorted(alias2, v); // updated list.
 is_correct := (is_sorted(original_list) && !contains(original_list, v));
 
 is_free := destruct(original_list); // explicitly consume the list using a dummy function. this is akin to free().
+is_free := destruct(temp);

@@ -145,6 +145,10 @@ class AssertStmt(Stmt):
     formula: Expr
 
 @dataclass
+class FactStmt(Stmt):
+    formula: Expr
+
+@dataclass
 class BlockStmt(Stmt):
     statements: List[Stmt]
 

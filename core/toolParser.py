@@ -195,6 +195,9 @@ class Z3Transformer(Transformer):
     def assert_stmt(self, items):
         return AssertStmt(items[0])
     
+    def fact_stmt(self, items):
+        return FactStmt(items[0])
+    
     def block_stmt(self, items):
         return BlockStmt(items)
     
