@@ -33,6 +33,11 @@ class Z3Transformer(Transformer):
         typeName = str(items[1])
         return VarDecl(name, typeName, False)
     
+    def const_decl(self, items):
+        name = str(items[0])
+        typeName = str(items[1])
+        return ConstDecl(name, typeName)
+    
     def struct_def(self, items):
         # items[0] is always reserved for the optional [LINEAR] token.
         # It will be None if the user didn't write 'linear'.

@@ -169,6 +169,8 @@ class TypeChecker:
         if isinstance(stmt, AssignStmt):
             is_invisible_assign = False
             if isinstance(stmt.lvalue, VarRef):
+                if self.env.is_constant(stmt.lvalue.name):
+                    raise Exception(f"Type Error: Cannot assign to constant variable '{stmt.lvalue.name}'")
                 base_name = stmt.lvalue.name
                 if '_' in base_name and base_name.rsplit('_', 1)[1].isdigit():
                     base_name = base_name.rsplit('_', 1)[0]

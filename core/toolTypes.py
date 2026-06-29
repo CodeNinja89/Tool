@@ -8,10 +8,14 @@ class TypeEnvironment:
         self.oracles: Dict[str, FunctionDef] = {}
         self.linear_structs = set() # tracks linear ADTs
         self.invisible_vars = set() # tracks invisible variables (e.g., ghost variables)
+        self.constant_vars = set() # tracks constant variables (e.g., const declarations)
 
     def build(self, declarations: List[ASTNode]):
         for decl in declarations:
             if isinstance(decl, VarDecl):
+                self.variables[decl.name] = decl.typeName
+            elif isinstance(decl, ConstDecl):
+                self.constant_vars.add(decl.name)
                 self.variables[decl.name] = decl.typeName
             elif isinstance(decl, InvisibleDecl):
                 self.invisible_vars.add(decl.name)
@@ -27,7 +31,10 @@ class TypeEnvironment:
         if var_name not in self.variables:
             raise Exception(f"Variable {var_name} is not defined")
         return self.variables[var_name]
-    
+
+    def is_constant(self, var_name: str) -> bool:
+        return var_name in self.constant_vars
+
     def get_struct_fields(self, struct_name: str) -> Dict[str, str]:
         if struct_name not in self.structs:
             raise Exception(f"Struct {struct_name} not defined")

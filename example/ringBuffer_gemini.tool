@@ -17,6 +17,8 @@ head: int;
 tail: int;
 new_value: int;
 
+const test: int;
+
 res: EnqueueResult;
 is_correct: bool;
 
@@ -25,6 +27,7 @@ capacity > 0;
 head >= 0;
 tail >= 0;
 ((tail + 1) % capacity) != head;
+test == 10;
 
 %% postconditions
 is_correct == true;

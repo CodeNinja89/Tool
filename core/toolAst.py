@@ -26,6 +26,11 @@ class InvisibleDecl(ASTNode):
     typeName: str
 
 @dataclass
+class ConstDecl(ASTNode):
+    name: str
+    typeName: str
+
+@dataclass
 class StructDef(ASTNode):
     name: str # name of the struct
     fields: Dict[str, str] # fields of a struct
