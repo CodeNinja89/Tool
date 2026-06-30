@@ -156,7 +156,6 @@ class TypeChecker:
         
         elif type(expr).__name__ == "Quantifier":
             # Just return bool for now so the checker doesn't crash if it hits a forall/exists node
-            print("HERE WE ARE!")
             return "bool"
         raise NotImplementedError(f"Type checking for {type(expr)} not implemented.")
     

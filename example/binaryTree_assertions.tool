@@ -97,7 +97,6 @@ assert (forall x: int . !(x > original_tree.val) || (all_greater(insert(original
 original_tree := insert(original_tree, v);
 assert is_bst(original_tree) == true;
 assert contains(original_tree, v) == true;
+is_freed := destruct(original_tree);
 
 is_correct := true; // if we reach here, all assertions pass.
-
-is_freed := destruct(original_tree);
