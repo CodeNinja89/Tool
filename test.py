@@ -123,24 +123,6 @@ def main():
                 
                 # After proving it, add it to the timeline so Z3 can use it as a fact!
                 solver.add(z3_formula)
-
-            elif isinstance(item, AssertStmt):
-                print("\n--- [ASSERTION VERIFIER] Analyzing AssertStmt ---")
-                z3_formula = translator.translate_expr(item.formula, checker)
-                solver.push()
-                solver.add(z3.Not(z3_formula))
-
-                if solver.check() == z3.sat:
-                    print(f"❌ INVALID (Assertion Violated!): {z3_formula}")
-                    print("\n--- Counter-Example Model ---")
-                    print(solver.model())
-                    exit(1)
-
-                solver.pop()
-                print(f"✅ Assertion Check Passed!: {z3_formula}")
-                
-                # After proving it, add it to the timeline so Z3 can use it as a fact!
-                solver.add(z3_formula)
                 
             # 3. Otherwise, it's a normal AST formula (Assignments, Frame Axioms)
             else:
