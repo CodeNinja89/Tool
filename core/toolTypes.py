@@ -6,6 +6,7 @@ class TypeEnvironment:
         self.variables: Dict[str, str] = {}
         self.structs: Dict[str, Dict[str, str]] = {} # Maps struct names to their field layouts (e.g., {"Node": {"value": "uint32", "next": "Node"}})
         self.oracles: Dict[str, FunctionDef] = {}
+        self.envs: Dict[str, EnvDef] = {}
         self.linear_structs = set() # tracks linear ADTs
         self.invisible_vars = set() # tracks invisible variables (e.g., ghost variables)
         self.constant_vars = set() # tracks constant variables (e.g., const declarations)
@@ -26,7 +27,8 @@ class TypeEnvironment:
                     self.linear_structs.add(decl.name)
             elif isinstance(decl, FunctionDef):
                 self.oracles[decl.name] = decl
-
+            elif isinstance(decl, EnvDef):
+                self.envs[decl.name] = decl
     def get_var_type(self, var_name: str) -> str:
         if var_name not in self.variables:
             raise Exception(f"Variable {var_name} is not defined")
@@ -40,7 +42,18 @@ class TypeEnvironment:
             raise Exception(f"Struct {struct_name} not defined")
         return self.structs[struct_name]
     
+    def is_oracle(self, func_name: str) -> bool:
+        return func_name in self.oracles
+    
+    def is_env(self, func_name: str) -> bool:
+        return func_name in self.envs
+    
     def get_oracles(self, oracle_name: str) -> FunctionDef:
         if oracle_name not in self.oracles:
             raise Exception(f"Oracle {oracle_name} is not defined")
         return self.oracles[oracle_name]
+    
+    def get_envs(self, env_name: str) -> EnvDef:
+        if env_name not in self.envs:
+            raise Exception(f"Env {env_name} is not defined")
+        return self.envs[env_name]

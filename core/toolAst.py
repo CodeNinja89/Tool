@@ -45,6 +45,13 @@ class FunctionDef(ASTNode):
     clauses: List[ASTNode]
 
 @dataclass
+class EnvDef(ASTNode):
+    name: str
+    args: List[VarDecl]
+    retName: str
+    retType: str
+
+@dataclass
 class Expr(ASTNode):
     pass
 

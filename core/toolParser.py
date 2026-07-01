@@ -85,6 +85,15 @@ class Z3Transformer(Transformer):
 
         return FunctionDef(name, args, retName, retType, clauses)
     
+    def env_def(self, items):
+        # Grammar: "env" NAME "(" [arg_list] ")" "->" NAME ":" type ";"
+        name = str(items[0])
+        args = items[1] if items[1] is not None else []
+        retName = str(items[2])
+        retType = str(items[3])
+
+        return EnvDef(name, args, retName, retType)
+    
     def arg_list(self, items):
         return items
     

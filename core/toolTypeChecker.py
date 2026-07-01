@@ -114,16 +114,31 @@ class TypeChecker:
                 
                 return struct_name # A constructor returns an instance of the struct!
             
-            oracle = self.env.get_oracles(expr.name)
-            if len(expr.args) != len(oracle.args):
-                raise Exception(f"Oracle {expr.name} expects {len(oracle.args)} but got {len(expr.args)}")
-            for i, arg_expr in enumerate(expr.args):
-                is_refer_arg = oracle.args[i].is_refer
-                arg_type = self.get_expr_type(arg_expr, is_refer_arg)
-                expected_type = oracle.args[i].typeName
-                if arg_type != expected_type:
-                    raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
-            return oracle.retType
+            if self.env.is_env(expr.name):
+                env_def = self.env.get_envs(expr.name)
+                if len(expr.args) != len(env_def.args):
+                    raise Exception(f"Env {expr.name} expects {len(env_def.args)} but got {len(expr.args)}")
+                for i, arg_expr in enumerate(expr.args):
+                    arg_type = self.get_expr_type(arg_expr)
+                    expected_type = env_def.args[i].typeName
+                    if arg_type != expected_type:
+                        raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
+                return env_def.retType
+            
+            elif self.env.is_oracle(expr.name):
+                oracle = self.env.get_oracles(expr.name)
+                if len(expr.args) != len(oracle.args):
+                    raise Exception(f"Oracle {expr.name} expects {len(oracle.args)} but got {len(expr.args)}")
+                for i, arg_expr in enumerate(expr.args):
+                    is_refer_arg = oracle.args[i].is_refer
+                    arg_type = self.get_expr_type(arg_expr, is_refer_arg)
+                    expected_type = oracle.args[i].typeName
+                    if arg_type != expected_type:
+                        raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
+                return oracle.retType
+            
+            else:
+                raise Exception(f"Call Error: '{expr.name}' is not a defined oracle or environment.")
             
         elif isinstance(expr, FieldAccess):
             obj_type = self.get_expr_type(expr.obj, is_refer)

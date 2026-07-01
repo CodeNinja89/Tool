@@ -341,96 +341,122 @@ class Z3Translator:
                 constructor = dt_sort.constructor(0) 
                 return cast(z3.ExprRef, constructor(*z3_args))
             
-            oracle_def = self.env.get_oracles(expr.name)
-
-            # translate teh concrete args for THIS specific call
-            z3_args = []
-            for i, arg in enumerate(expr.args):
-                if isinstance(arg, Literal) and arg.value == "null":
-                    expected_type = oracle_def.args[i].typeName
-                    z3_sort = self.get_z3_sort(expected_type)
-                    null_constructor = getattr(z3_sort, f"null_{expected_type}")
-                    z3_args.append(cast(z3.ExprRef, null_constructor))
-                else:
-                    z3_args.append(self.translate_expr(arg, tc))
-                
-                # check if need to compile the function signature
-                if expr.name not in self.func_cache:
-                    domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
-                    range_sort = self.get_z3_sort(oracle_def.retType)
-
-                    if self.oracle_manager.is_recursive(oracle_def):
-                        print(f"DEBUG: Compiling Native Z3 Recursive Function for '{expr.name}'")
-
-                        # When translating the body of a recursive function, the AST translator 
-                        # will eventually hit a FuncCall pointing to itself. If 
-                        # we didn't cache z3_func right now, the translator would try to compile 
-                        # the function again, and again, forever. Caching it early breaks the loop.
-
-                        z3_func = z3.RecFunction(expr.name, *domain_sorts, range_sort)
-                        self.func_cache[expr.name] = z3_func
-
-                        # Extract the Returns clause
-                        returns_expr = None
-                        for clause in oracle_def.clauses:
-                            if isinstance(clause, Returns):
-                                returns_expr = clause.formula
-                                break
-                        if not returns_expr:
-                            raise Exception(f"Recursive oracle '{expr.name}' must have a returns clause.")
-                        
-                        # C. Strip the "ret_name ==" from the AST to get the pure functional body
-                        body_ast = None
-                        if isinstance(returns_expr, BinaryExpr) and returns_expr.op == '==':
-                            if isinstance(returns_expr.left, VarRef) and returns_expr.left.name == oracle_def.retName:
-                                body_ast = returns_expr.right
-                            elif isinstance(returns_expr.right, VarRef) and returns_expr.right.name == oracle_def.retName:
-                                body_ast = returns_expr.left
-                                
-                        if not body_ast:
-                            raise Exception(f"Recursive returns clause in '{expr.name}' must be formatted as 'ret_name == <expression>'")
-
-                        # To translate the body, the compiler temporarily injects the formal parameters 
-                        # (like t and x from your BST example) into the global environment. It translates 
-                        # the body (z3_body), and then immediately deletes the variables so they don't 
-                        # leak into the rest of the program.
-                        
-                        z3_bound_vars = []
-                        old_env_vars = {}
-                        old_cache_vars = {}
-                        
-                        for arg in oracle_def.args:
-                            if arg.name in self.env.variables:
-                                old_env_vars[arg.name] = self.env.variables.get(arg.name)
-                            if arg.name in self.var_cache:
-                                old_cache_vars[arg.name] = self.var_cache.get(arg.name)
-
-                            self.env.variables[arg.name] = arg.typeName
-                            z3_bound_vars.append(self.get_z3_var(arg.name, arg.typeName))
-
-                        # E. Translate the pure functional body!
-                        z3_body = self.translate_expr(body_ast, tc)
-
-                        # F. Clean up the environment so we don't pollute the global scope
-                        for arg in oracle_def.args:
-                            if arg.name in old_env_vars:
-                                self.env.variables[arg.name] = old_env_vars[arg.name]
-                            else:
-                                del self.env.variables[arg.name]
-                            if arg.name in old_cache_vars:
-                                self.var_cache[arg.name] = old_cache_vars[arg.name]
-                            if arg.name in self.var_cache:
-                                del self.var_cache[arg.name]
-
-                        # G. Bind the mathematical body to the recursive signature
-                        z3.RecAddDefinition(z3_func, z3_bound_vars, z3_body)
+            if self.env.is_env(expr.name):
+                env_def = self.env.get_envs(expr.name)
+                z3_args = []
+                for i, arg in enumerate(expr.args):
+                    if isinstance(arg, Literal) and arg.value == "null":
+                        expected_type = env_def.args[i].typeName
+                        z3_sort = self.get_z3_sort(expected_type)
+                        null_constructor = getattr(z3_sort, f"null_{expected_type}")
+                        z3_args.append(cast(z3.ExprRef, null_constructor))
                     else:
-                        # Standard Uninterpreted Function for non-recursive oracles
-                        self.func_cache[expr.name] = z3.Function(expr.name, *domain_sorts, range_sort)
-                
-            # 3. Finally, execute the call using the cached function and our translated concrete args
-            z3_func = self.func_cache[expr.name]
-            return cast(z3.ExprRef, z3_func(*z3_args))
+                        z3_args.append(self.translate_expr(arg, tc))
+
+                if expr.name not in self.func_cache:
+                    print(f"DEBUG: Compiling Native Z3 Function for '{expr.name}'")
+                    domain_sorts = [self.get_z3_sort(arg.typeName) for arg in env_def.args]
+                    range_sort = self.get_z3_sort(env_def.retType)
+                    self.func_cache[expr.name] = z3.Function(expr.name, *domain_sorts, range_sort)
+
+                z3_func = self.func_cache[expr.name]
+                return cast(z3.ExprRef, z3_func(*z3_args))
+            
+            elif self.env.is_oracle(expr.name):
+            
+                oracle_def = self.env.get_oracles(expr.name)
+
+                # translate teh concrete args for THIS specific call
+                z3_args = []
+                for i, arg in enumerate(expr.args):
+                    if isinstance(arg, Literal) and arg.value == "null":
+                        expected_type = oracle_def.args[i].typeName
+                        z3_sort = self.get_z3_sort(expected_type)
+                        null_constructor = getattr(z3_sort, f"null_{expected_type}")
+                        z3_args.append(cast(z3.ExprRef, null_constructor))
+                    else:
+                        z3_args.append(self.translate_expr(arg, tc))
+                    
+                    # check if need to compile the function signature
+                    if expr.name not in self.func_cache:
+                        domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
+                        range_sort = self.get_z3_sort(oracle_def.retType)
+
+                        if self.oracle_manager.is_recursive(oracle_def):
+                            print(f"DEBUG: Compiling Native Z3 Recursive Function for '{expr.name}'")
+
+                            # When translating the body of a recursive function, the AST translator 
+                            # will eventually hit a FuncCall pointing to itself. If 
+                            # we didn't cache z3_func right now, the translator would try to compile 
+                            # the function again, and again, forever. Caching it early breaks the loop.
+
+                            z3_func = z3.RecFunction(expr.name, *domain_sorts, range_sort)
+                            self.func_cache[expr.name] = z3_func
+
+                            # Extract the Returns clause
+                            returns_expr = None
+                            for clause in oracle_def.clauses:
+                                if isinstance(clause, Returns):
+                                    returns_expr = clause.formula
+                                    break
+                            if not returns_expr:
+                                raise Exception(f"Recursive oracle '{expr.name}' must have a returns clause.")
+                            
+                            # C. Strip the "ret_name ==" from the AST to get the pure functional body
+                            body_ast = None
+                            if isinstance(returns_expr, BinaryExpr) and returns_expr.op == '==':
+                                if isinstance(returns_expr.left, VarRef) and returns_expr.left.name == oracle_def.retName:
+                                    body_ast = returns_expr.right
+                                elif isinstance(returns_expr.right, VarRef) and returns_expr.right.name == oracle_def.retName:
+                                    body_ast = returns_expr.left
+                                    
+                            if not body_ast:
+                                raise Exception(f"Recursive returns clause in '{expr.name}' must be formatted as 'ret_name == <expression>'")
+
+                            # To translate the body, the compiler temporarily injects the formal parameters 
+                            # (like t and x from your BST example) into the global environment. It translates 
+                            # the body (z3_body), and then immediately deletes the variables so they don't 
+                            # leak into the rest of the program.
+                            
+                            z3_bound_vars = []
+                            old_env_vars = {}
+                            old_cache_vars = {}
+                            
+                            for arg in oracle_def.args:
+                                if arg.name in self.env.variables:
+                                    old_env_vars[arg.name] = self.env.variables.get(arg.name)
+                                if arg.name in self.var_cache:
+                                    old_cache_vars[arg.name] = self.var_cache.get(arg.name)
+
+                                self.env.variables[arg.name] = arg.typeName
+                                z3_bound_vars.append(self.get_z3_var(arg.name, arg.typeName))
+
+                            # E. Translate the pure functional body!
+                            z3_body = self.translate_expr(body_ast, tc)
+
+                            # F. Clean up the environment so we don't pollute the global scope
+                            for arg in oracle_def.args:
+                                if arg.name in old_env_vars:
+                                    self.env.variables[arg.name] = old_env_vars[arg.name]
+                                else:
+                                    del self.env.variables[arg.name]
+                                if arg.name in old_cache_vars:
+                                    self.var_cache[arg.name] = old_cache_vars[arg.name]
+                                if arg.name in self.var_cache:
+                                    del self.var_cache[arg.name]
+
+                            # G. Bind the mathematical body to the recursive signature
+                            z3.RecAddDefinition(z3_func, z3_bound_vars, z3_body)
+                        else:
+                            # Standard Uninterpreted Function for non-recursive oracles
+                            self.func_cache[expr.name] = z3.Function(expr.name, *domain_sorts, range_sort)
+                    
+                # 3. Finally, execute the call using the cached function and our translated concrete args
+                z3_func = self.func_cache[expr.name]
+                return cast(z3.ExprRef, z3_func(*z3_args))
+            
+            else:
+                raise Exception(f"Function '{expr.name}' is neither an oracle nor an env function.")
                 
         elif isinstance(expr, FieldAccess):
             obj_z3 = self.translate_expr(expr.obj, tc)

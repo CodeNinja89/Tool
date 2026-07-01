@@ -13,7 +13,7 @@ postconditions_section: "%% postconditions" (formula ";")*
 program_section: "%% program" (statement)*
 
 // --- Declarations ---
-?declaration: var_decl | const_decl | function_def | struct_def | invisible_decl
+?declaration: var_decl | const_decl | function_def | struct_def | invisible_decl | env_def
 
 LINEAR: "linear"
 REFER: "refer"
@@ -23,6 +23,8 @@ var_decl: NAME ":" type ";"
 const_decl: "const" NAME ":" type ";"
 struct_def: [LINEAR] "struct" NAME "{" (NAME ":" type ";")+ "}"
 invisible_decl: INVISIBLE NAME ":" type ";"
+
+env_def: "env" NAME "("[arg_list] ")" "->" NAME ":" type ";"
 
 // --- Axiomatic Functions / Oracles ---
 function_def: "oracle" NAME "(" [arg_list] ")" "->" NAME ":" type "{" function_body "}"

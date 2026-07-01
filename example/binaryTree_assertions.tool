@@ -50,11 +50,14 @@ oracle destruct(n: BST) -> res: bool {
     returns res == true; 
 }
 
+env values(timestep: int) -> val: int;
+
 
 // --- Variables for our Proof ---
 base_tree: BST; // base tree
 original_tree: BST;
 v: int;
+t: int; // time step when a values is generated to be inserted into the BST
 is_correct: bool;
 is_freed: bool;
 
@@ -63,6 +66,8 @@ is_freed: bool;
 base_tree == null; // base case for induction hypothesis
 original_tree != null;
 is_bst(original_tree) == true;
+
+t > 0;
 
 %% postconditions
 
@@ -84,16 +89,17 @@ is_freed := destruct(base_tree);
 // spec but it does not proof if the fact is correct. So we use an assertion here.
 // assertions here act as intermediary lemmas that must hold to prove that final property.
 
-assert (forall x: int . is_bst(insert(original_tree.left, x)) == true);
-assert (forall x: int . contains(insert(original_tree.left, x), x) == true);
-assert (forall x: int . !(x < original_tree.val) || (all_less(insert(original_tree.left, x), original_tree.val)));
+assert (forall x: int . is_bst(insert(original_tree.left, values(x))) == true);
+assert (forall x: int . contains(insert(original_tree.left, values(x)), values(x)) == true);
+assert (forall x: int . !(values(x) < original_tree.val) || (all_less(insert(original_tree.left, values(x)), original_tree.val)));
 
-assert (forall x: int . is_bst(insert(original_tree.right, x)) == true);
-assert (forall x: int . contains(insert(original_tree.right, x), x) == true);
-assert (forall x: int . !(x > original_tree.val) || (all_greater(insert(original_tree.right, x), original_tree.val)));
+assert (forall x: int . is_bst(insert(original_tree.right, values(x))) == true);
+assert (forall x: int . contains(insert(original_tree.right, values(x)), values(x)) == true);
+assert (forall x: int . !(values(x) > original_tree.val) || (all_greater(insert(original_tree.right, values(x)), original_tree.val)));
 
 // inductive step
 
+v := values(t);
 original_tree := insert(original_tree, v);
 assert is_bst(original_tree) == true;
 assert contains(original_tree, v) == true;
