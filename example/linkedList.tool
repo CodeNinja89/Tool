@@ -77,7 +77,7 @@ v: int;
 is_sorted(original_list);
 length(original_list) > 1;
 !contains(original_list, v);
-temp == original_list;
+// temp == original_list;
 
 %% postconditions
 
@@ -86,6 +86,8 @@ is_correct == false; // proof-by-refutation. We use this approach because raw SM
 // implemented in TOOL. And probably never will be... TOOL is a SPECIFICATION LANGUAGE and not a theorem prover!
 
 %% program
+
+temp := original_list;
 
 alias1 := original_list;
 // alias2 := original_list; // error... alias1 owns the list.

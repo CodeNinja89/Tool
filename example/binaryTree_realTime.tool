@@ -74,6 +74,6 @@ is_correct == true;
 %% program
 
 assert forall t: int . (!(t >= 0) || is_bst(trace(t)) == true);
-assert forall t: int . (!(t >= 0) || contains(trace(t), values(t)) == true);
+assert forall t: int . (!(t > 0) || contains(trace(t), values(t)) == true);
 
 is_correct := true; // if we reach here, all assertions pass.
