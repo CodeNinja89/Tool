@@ -1,4 +1,5 @@
 %% declarations
+
 linear struct BST {
     val: int;
     left: BST;
@@ -50,30 +51,29 @@ oracle destruct(n: BST) -> res: bool {
     returns res == true; 
 }
 
-env values(timestep: int) -> val: int;
+// Update 1: The environment now strictly uses the timestep type
+env values(ts: timestep) -> val: int;
 
-oracle trace(t: int) -> s: BST {
-    assumes t >= 0;
-    returns s == (t == 0 ? 
-        null : 
-        insert(trace(t - 1), values(t))
-    );
+// Update 2: The new first-class temporal trace block
+trace bst_trace(t: timestep) -> s: BST {
+    init: 
+        s == null;
+    step: 
+        s == insert(bst_trace(t - 1), values(t));
 }
 
-
 // --- Variables for our Proof ---
-
 is_correct: bool;
 
 %% preconditions
 
 %% postconditions
-
 is_correct == true;
 
 %% program
 
-assert forall t: int . (!(t >= 0) || is_bst(trace(t)) == true);
-assert forall t: int . (!(t > 0) || contains(trace(t), values(t)) == true);
+// Update 3: Universal quantification over the timestep type
+assert forall t: timestep . (!(t >= 0) || is_bst(bst_trace(t)) == true);
+assert forall t: timestep . (!(t > 0) || contains(bst_trace(t), values(t)) == true);
 
 is_correct := true; // if we reach here, all assertions pass.

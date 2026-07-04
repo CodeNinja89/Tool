@@ -52,6 +52,15 @@ class EnvDef(ASTNode):
     retType: str
 
 @dataclass
+class TraceDef(ASTNode):
+    name: str
+    time_var: str
+    ret_name: str
+    ret_type: str
+    init_expr: Expr
+    step_expr: Expr
+
+@dataclass
 class Expr(ASTNode):
     pass
 

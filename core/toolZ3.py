@@ -38,6 +38,9 @@ class Z3Translator:
         elif type_name in self.env.structs:
             raise Exception(f"Z3 Error: Struct {type_name} not registered!")
         
+        elif type_name == "timestep":
+            sort = z3.IntSort(ctx=self.z3_ctx)
+        
         else:
             raise NotImplementedError(f"Z3 Sort mapping for type {type_name} not implemented!")
         
@@ -121,6 +124,15 @@ class Z3Translator:
             patterns.extend(self._find_patterns(q_expr.body(), bound_vars))
             
         return list(set(patterns))
+    
+    def _extract_rhs(self, expr: Expr, ret_name: str) -> Expr:
+        # Traces are written as "s == expression". We need to extract the expression side.
+        if isinstance(expr, BinaryExpr) and expr.op == '==':
+            if isinstance(expr.left, VarRef) and expr.left.name == ret_name:
+                return expr.right
+            elif isinstance(expr.right, VarRef) and expr.right.name == ret_name:
+                return expr.left
+        raise Exception(f"Trace block must be formatted as '{ret_name} == <expression>'")
 
     def get_z3_var(self, name: str, type_name: str) -> z3.ExprRef:
         # creates or retrieves a specific Z3 variable
@@ -454,9 +466,62 @@ class Z3Translator:
                 # 3. Finally, execute the call using the cached function and our translated concrete args
                 z3_func = self.func_cache[expr.name]
                 return cast(z3.ExprRef, z3_func(*z3_args))
+        
+            elif self.env.is_trace(expr.name):
+                trace_def = self.env.get_trace(expr.name)
+    
+                # Translate the concrete argument being passed to the trace
+                z3_args = [self.translate_expr(expr.args[0], tc)]
+                
+                if expr.name not in self.func_cache:
+                    print(f"DEBUG: Compiling Native Z3 Temporal Trace for '{expr.name}'")
+                    domain_sort = self.get_z3_sort("timestep")
+                    range_sort = self.get_z3_sort(trace_def.ret_type)
+                    z3_func = z3.RecFunction(expr.name, domain_sort, range_sort)
+                    self.func_cache[expr.name] = z3_func
+                    
+                    # Extract the pure functional mathematical bodies
+                    init_ast = self._extract_rhs(trace_def.init_expr, trace_def.ret_name)
+                    step_ast = self._extract_rhs(trace_def.step_expr, trace_def.ret_name)
+                    
+                    # Temporarily inject the temporal variable into the environment for translation
+                    old_time_type = self.env.variables.get(trace_def.time_var)
+                    self.env.variables[trace_def.time_var] = "timestep"
+                    z3_bound_time = self.get_z3_var(trace_def.time_var, "timestep")
+                    
+                    # Translate the init body, explicitly handling isolated 'null' literals
+                    if isinstance(init_ast, Literal) and init_ast.value == "null":
+                        z3_sort = self.get_z3_sort(trace_def.ret_type)
+                        null_constructor = getattr(z3_sort, f"null_{trace_def.ret_type}")
+                        z3_init = cast(z3.ExprRef, null_constructor)
+                    else:
+                        z3_init = self.translate_expr(init_ast, tc)
+                        
+                    # Translate the step body, explicitly handling isolated 'null' literals
+                    if isinstance(step_ast, Literal) and step_ast.value == "null":
+                        z3_sort = self.get_z3_sort(trace_def.ret_type)
+                        null_constructor = getattr(z3_sort, f"null_{trace_def.ret_type}")
+                        z3_step = cast(z3.ExprRef, null_constructor)
+                    else:
+                        z3_step = self.translate_expr(step_ast, tc)
+                    
+                    # Clean up the environment
+                    if old_time_type is not None:
+                        self.env.variables[trace_def.time_var] = old_time_type
+                    else:
+                        del self.env.variables[trace_def.time_var]
+                    if trace_def.time_var in self.var_cache:
+                        del self.var_cache[trace_def.time_var]
+                        
+                    # Bind the init and step blocks together using a conditional
+                    z3_body = z3.If(z3_bound_time == 0, z3_init, z3_step)
+                    z3.RecAddDefinition(z3_func, [z3_bound_time], z3_body)       
+
+                z3_func = self.func_cache[expr.name]
+                return cast(z3.ExprRef, z3_func(*z3_args))
             
             else:
-                raise Exception(f"Function '{expr.name}' is neither an oracle nor an env function.")
+                raise Exception(f"Function '{expr.name}' is neither an oracle, an env function, nor a trace.")
                 
         elif isinstance(expr, FieldAccess):
             obj_z3 = self.translate_expr(expr.obj, tc)

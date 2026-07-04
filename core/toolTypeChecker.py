@@ -2,7 +2,8 @@ from core.toolAst import *
 from core.toolTypes import TypeEnvironment
 
 NUMERIC_TYPES = {
-    "int"
+    "int",
+    "timestamp"
 }
 
 class TypeChecker:
@@ -10,6 +11,14 @@ class TypeChecker:
         self.env = env
         self.delta = {} # track unconsumed resources (variables)
         self.enforce_linearity = True
+
+    def _types_compatible(self, actual: str, expected: str) -> bool:
+        if actual == expected:
+            return True
+        # Allow seamless interoperability between ints (like literals) and timesteps
+        if {actual, expected} == {"int", "timestep"}:
+            return True
+        return False
 
     def get_expr_type(self, expr: ASTNode, is_refer: bool = False) -> str:
         if isinstance(expr, VarRef):
@@ -49,7 +58,7 @@ class TypeChecker:
             if expr.op in ['==', '!=']:
                 if left_type == "null" and right_type in self.env.structs: return "bool"
                 if right_type == "null" and left_type in self.env.structs: return "bool"
-                if left_type != right_type:
+                if not self._types_compatible(left_type, right_type):
                     raise Exception(f"Type Error: Cannot compare '{left_type}' and '{right_type}")
                 return "bool"
             
@@ -62,7 +71,7 @@ class TypeChecker:
             if expr.op in ['+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>']:
                 if left_type not in NUMERIC_TYPES and right_type not in NUMERIC_TYPES:
                     raise Exception(f"Operation {expr.op} cannot be used with non-numeric types")
-                if left_type != right_type:
+                if not self._types_compatible(left_type, right_type):
                     raise Exception(f"Type Error: Operator {expr.op} expects {left_type}")
                 return left_type
             
@@ -121,7 +130,7 @@ class TypeChecker:
                 for i, arg_expr in enumerate(expr.args):
                     arg_type = self.get_expr_type(arg_expr)
                     expected_type = env_def.args[i].typeName
-                    if arg_type != expected_type:
+                    if not self._types_compatible(arg_type, expected_type):
                         raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
                 return env_def.retType
             
@@ -133,9 +142,20 @@ class TypeChecker:
                     is_refer_arg = oracle.args[i].is_refer
                     arg_type = self.get_expr_type(arg_expr, is_refer_arg)
                     expected_type = oracle.args[i].typeName
-                    if arg_type != expected_type:
+                    if not self._types_compatible(arg_type, expected_type):
                         raise Exception(f"Type Error: Arg {i} of {expr.name} expects {expected_type}, got {arg_type}")
                 return oracle.retType
+            
+            elif self.env.is_trace(expr.name):
+                trace_def = self.env.get_trace(expr.name)
+                if len(expr.args) != 1:
+                    raise Exception(f"Trace {expr.name} expects exactly 1 argument (timestep) but got {len(expr.args)}")
+                
+                arg_type = self.get_expr_type(expr.args[0])
+                if not self._types_compatible(arg_type, "timestep"):
+                    raise Exception(f"Type Error: Trace {expr.name} expects a 'timestep', got '{arg_type}'")
+                
+                return trace_def.ret_type
             
             else:
                 raise Exception(f"Call Error: '{expr.name}' is not a defined oracle or environment.")

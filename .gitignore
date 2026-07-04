@@ -14,3 +14,11 @@ core/__pycache__/toolSSA.cpython-314.pyc
 core/__pycache__/toolTypeChecker.cpython-314.pyc
 core/__pycache__/toolTypes.cpython-314.pyc
 /core/__pycache__
+*.pdf
+/AUTOSARSpecs
+core/__pycache__/toolAst.cpython-314.pyc
+core/__pycache__/toolParser.cpython-314.pyc
+core/__pycache__/toolTypeChecker.cpython-314.pyc
+core/__pycache__/toolTypes.cpython-314.pyc
+core/__pycache__/toolZ3.cpython-314.pyc
+*.pdf

@@ -10,6 +10,7 @@ class TypeEnvironment:
         self.linear_structs = set() # tracks linear ADTs
         self.invisible_vars = set() # tracks invisible variables (e.g., ghost variables)
         self.constant_vars = set() # tracks constant variables (e.g., const declarations)
+        self.traces: Dict[str, TraceDef] = {}
 
     def build(self, declarations: List[ASTNode]):
         for decl in declarations:
@@ -29,6 +30,9 @@ class TypeEnvironment:
                 self.oracles[decl.name] = decl
             elif isinstance(decl, EnvDef):
                 self.envs[decl.name] = decl
+            elif isinstance(decl, TraceDef):
+                self.traces[decl.name] = decl
+        
     def get_var_type(self, var_name: str) -> str:
         if var_name not in self.variables:
             raise Exception(f"Variable {var_name} is not defined")
@@ -57,3 +61,11 @@ class TypeEnvironment:
         if env_name not in self.envs:
             raise Exception(f"Env {env_name} is not defined")
         return self.envs[env_name]
+    
+    def is_trace(self, func_name: str) -> bool:
+        return func_name in self.traces
+    
+    def get_trace(self, trace_name: str) -> TraceDef:
+        if trace_name not in self.traces:
+            raise Exception(f"Trace {trace_name} is not defined")
+        return self.traces[trace_name]

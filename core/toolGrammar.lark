@@ -13,7 +13,7 @@ postconditions_section: "%% postconditions" (formula ";")*
 program_section: "%% program" (statement)*
 
 // --- Declarations ---
-?declaration: var_decl | const_decl | function_def | struct_def | invisible_decl | env_def
+?declaration: var_decl | const_decl | function_def | struct_def | invisible_decl | env_def | trace_def
 
 LINEAR: "linear"
 REFER: "refer"
@@ -25,6 +25,8 @@ struct_def: [LINEAR] "struct" NAME "{" (NAME ":" type ";")+ "}"
 invisible_decl: INVISIBLE NAME ":" type ";"
 
 env_def: "env" NAME "("[arg_list] ")" "->" NAME ":" type ";"
+trace_def: "trace" NAME "(" NAME ":" "timestep" ")" "->" NAME ":" type "{" trace_body "}"
+trace_body: "init" ":" formula ";" "step" ":" formula ";"
 
 // --- Axiomatic Functions / Oracles ---
 function_def: "oracle" NAME "(" [arg_list] ")" "->" NAME ":" type "{" function_body "}"
@@ -52,6 +54,7 @@ if_stmt: "if" "(" formula ")" block_stmt ["else" block_stmt]
 // --- Types (Cleaned: Only Int and Bool) ---
 !base_type: "int" 
           | "bool"
+          | "timestep"
 
 ?type: base_type
      | "seq" "[" type "]" -> seq_type 

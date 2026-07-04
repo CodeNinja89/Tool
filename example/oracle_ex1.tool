@@ -12,7 +12,7 @@ oracle exit_critical(current_state: bool) -> next_state: bool {
 
 // 2. The Global State
 is_atomic: bool;
-shared_resource: uint32;
+shared_resource: int;
 
 %% preconditions
 is_atomic == false;

@@ -94,6 +94,30 @@ class Z3Transformer(Transformer):
 
         return EnvDef(name, args, retName, retType)
     
+    def trace_def(self, items):
+        # Grammar: "trace" NAME "(" NAME ":" "timestep" ")" "->" NAME ":" type "{" trace_body "}"
+        name = str(items[0])
+        time_var = str(items[1])
+        ret_name = str(items[2])
+        ret_type = str(items[3])
+        
+        # items[4] contains the tuple returned by trace_body
+        init_expr, step_expr = items[4] 
+        
+        return TraceDef(
+            name=name, 
+            time_var=time_var, 
+            ret_name=ret_name, 
+            ret_type=ret_type, 
+            init_expr=init_expr, 
+            step_expr=step_expr
+        )
+
+    def trace_body(self, items):
+        # Grammar: "init" ":" formula ";" "step" ":" formula ";"
+        # Returns a tuple of (init_formula, step_formula)
+        return items[0], items[1]
+    
     def arg_list(self, items):
         return items
     
