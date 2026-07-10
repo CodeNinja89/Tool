@@ -2,14 +2,15 @@
 //  Peterson's Mutual Exclusion — TOOL oracle-based verification
 // =============================================================
 //
-// Models the two-process Peterson protocol as a sequence of
-// axiomatic state transitions driven by an external schedule.
+// Models the two-process Peterson protocol using sequences for
+// per-process state, closely matching the Dafny TSState design.
 //
 // Design:
-//   - PetersonState struct holds both process states, flags, turn
-//   - Each transition is an oracle: takes old state -> returns new state
-//   - env NextProcess(time) picks which process steps; constrained to {0,1} by invariant
-//   - Loop invariant maintains the Valid predicate (inlined) over all iterations
+//   - cs : seq[int]    — process states indexed by process ID
+//   - flags : seq[bool] — entry flags indexed by process ID
+//   - turn : int        — shared turn variable (-1 initially, then {0,1})
+//   - Each transition oracle takes (state, p) and returns new state
+//     where only process p's fields change via sequence update.
 // =============================================================
 
 %% declarations
@@ -23,10 +24,8 @@ Exit: int;
 
 // --- Global protocol state ---
 struct PetersonState {
-    cs0: int;
-    cs1: int;
-    f0: bool;
-    f1: bool;
+    cs: seq[int];
+    flags: seq[bool];
     turn: int;
 }
 
@@ -34,16 +33,21 @@ struct PetersonState {
 // Returns true iff the global state satisfies all Peterson invariants.
 oracle Valid(refer s: PetersonState) -> res: bool {
     returns res == (
+        // Exactly two processes
+        (s.cs.length == 2) &&
+        (s.flags.length == 2) &&
+
         // Both processes in valid states
-        (s.cs0 >= Start && s.cs0 <= Exit) &&
-        (s.cs1 >= Start && s.cs1 <= Exit) &&
+        (forall p: int . (!(p >= 0 && p < s.cs.length) || 
+            (s.cs[p] >= Start && s.cs[p] <= Exit))) &&
 
-        // Mutual exclusion — the core safety property
-        (s.cs0 != Critical || s.cs1 != Critical) &&
+        // Mutual exclusion — at most one process in Critical
+        !(exists p: int . exists q: int . 
+            p != q && s.cs[p] == Critical && s.cs[q] == Critical) &&
 
-        // Flag consistency: flag is true iff process past Start
-        (s.f0 == (s.cs0 >= Gate)) &&
-        (s.f1 == (s.cs1 >= Gate)) &&
+        // Flag consistency: flag[p] is true iff cs[p] past Start
+        (forall p: int . (!(p >= 0 && p < s.cs.length) || 
+            (s.flags[p] == (s.cs[p] >= Gate)))) &&
 
         // Turn bounds
         (s.turn >= -1 && s.turn <= 1)
@@ -51,123 +55,76 @@ oracle Valid(refer s: PetersonState) -> res: bool {
 }
 
 // --- Process 0 transition oracles ---
-// Each oracle takes the full PetersonState and returns a new state.
-// The `assumes` clause guards the precondition; the `returns` clause
-// specifies exactly which fields change (others are preserved).
+// Each oracle takes the full state and process ID, returns new state.
+// Sequence updates use Store: new_seq = old_seq[i := val]
 
-oracle StartToGate(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Start;
-    returns  (ns.cs0 == Gate) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == true) &&
-             (ns.f1 == s.f1) &&
+oracle StartToGate(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Start && (p == 0 || p == 1);
+    returns  (ns.cs[p] == Gate) &&
+             (forall i: int . (i == p) || (ns.cs[i] == s.cs[i])) &&
+             (ns.flags[p] == true) &&
+             (forall i: int . (i == p) || (ns.flags[i] == s.flags[i])) &&
              (ns.turn == s.turn);
 }
 
-oracle GateToWait(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Gate;
-    returns  (ns.cs0 == Wait) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
-             (ns.turn == 1);
+oracle GateToWait(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Gate && (p == 0 || p == 1);
+    returns  (ns.cs[p] == Wait) &&
+             (forall i: int . (i == p) || (ns.cs[i] == s.cs[i])) &&
+             (ns.flags == s.flags) &&
+             (ns.turn == 1 - p);
 }
 
-oracle WaitToCritical(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Wait && (s.turn == 0 || !s.f1);
-    returns  (ns.cs0 == Critical) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
+oracle WaitToCritical(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Wait && 
+            (s.turn == p || !s.flags[1 - p]) && (p == 0 || p == 1);
+    returns  (ns.cs[p] == Critical) &&
+             (forall i: int . (i == p) || (ns.cs[i] == s.cs[i])) &&
+             (ns.flags == s.flags) &&
              (ns.turn == s.turn);
 }
 
-oracle WaitToWait(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Wait && s.f1 && s.turn == 1;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
+oracle WaitToWait(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Wait && 
+            s.flags[1 - p] && 
+            s.turn == 1 - p &&
+            (p == 0 || p == 1);
+    returns  (ns.cs == s.cs) &&
+             (ns.flags == s.flags) &&
              (ns.turn == s.turn);
 }
 
-oracle CriticalToExit(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Critical;
-    returns  (ns.cs0 == Exit) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == false) &&
-             (ns.f1 == s.f1) &&
+oracle CriticalToExit(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Critical && (p == 0 || p == 1);
+    returns  (ns.cs[p] == Exit) &&
+             (forall i: int . (i == p) || (ns.cs[i] == s.cs[i])) &&
+             (ns.flags[p] == false) &&
+             (forall i: int . (i == p) || (ns.flags[i] == s.flags[i])) &&
              (ns.turn == s.turn);
 }
 
-oracle ExitToStart(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs0 == Exit;
-    returns  (ns.cs0 == Start) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
+oracle ExitToStart(s: PetersonState, p: int) -> ns: PetersonState {
+    assumes s.cs[p] == Exit && (p == 0 || p == 1);
+    returns  (ns.cs[p] == Start) &&
+             (forall i: int . (i == p) || (ns.cs[i] == s.cs[i])) &&
+             (ns.flags == s.flags) &&
              (ns.turn == s.turn);
 }
 
-// --- Process 1 transition oracles (symmetric mirror) ---
-
-oracle P1_StartToGate(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Start;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == Gate) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == true) &&
-             (ns.turn == s.turn);
-}
-
-oracle P1_GateToWait(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Gate;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == Wait) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
-             (ns.turn == 0);
-}
-
-oracle P1_WaitToCritical(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Wait && (s.turn == 1 || !s.f0);
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == Critical) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
-             (ns.turn == s.turn);
-}
-
-oracle P1_WaitToWait(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Wait && s.f0 && s.turn == 0;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == s.cs1) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
-             (ns.turn == s.turn);
-}
-
-oracle P1_CriticalToExit(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Critical;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == Exit) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == false) &&
-             (ns.turn == s.turn);
-}
-
-oracle P1_ExitToStart(s: PetersonState) -> ns: PetersonState {
-    assumes s.cs1 == Exit;
-    returns  (ns.cs0 == s.cs0) &&
-             (ns.cs1 == Start) &&
-             (ns.f0 == s.f0) &&
-             (ns.f1 == s.f1) &&
-             (ns.turn == s.turn);
+// --- Initial state constructor oracle ---
+// Creates the initial Peterson state with both processes at Start.
+oracle InitState(dummy: int) -> s: PetersonState {
+    returns  (s.cs[0] == Start) &&
+             (s.cs[1] == Start) &&
+             (s.flags[0] == false) &&
+             (s.flags[1] == false) &&
+             (s.turn == -1) &&
+             (s.cs.length == 2) &&
+             (s.flags.length == 2);
 }
 
 // --- Scheduler env function ---
-// An unconstrained environment function that picks which process runs next.
-// The loop invariant constrains externalTurn to {0, 1}.
+// Picks which process runs next; constrained to {0, 1} by invariant.
 env NextProcess(time: int) -> p: int;
 
 // --- Global variables ---
@@ -184,12 +141,7 @@ Wait == 2;
 Critical == 3;
 Exit == 4;
 
-// Initial state: both processes at Start, flags off, turn = -1
-state.cs0 == Start;
-state.cs1 == Start;
-state.f0 == false;
-state.f1 == false;
-state.turn == -1;
+// Initial state is constructed by InitState oracle before the loop.
 externalTurn == 0;
 i == 0;
 steps == 10;
@@ -198,68 +150,87 @@ steps == 10;
 
 // Mutual exclusion holds after the simulation:
 // it is impossible for both processes to be in Critical.
-!(state.cs0 == Critical && state.cs1 == Critical);
+!(state.cs[0] == Critical && state.cs[1] == Critical);
 
 %% program
 
+// Initialize the protocol state
+state := InitState(0);
+assert (state.cs.length == 2);
+assert (state.flags.length == 2);
+assert (forall p: int . (!(p >= 0 && p < state.cs.length) || (state.cs[p] >= Start && state.cs[p] <= Exit)));
+assert !(exists p: int . exists q: int .  p != q && (p >= 0 && p < state.cs.length) && (q >= 0 && q < state.cs.length) && state.cs[p] == Critical && state.cs[q] == Critical);
+assert (forall p: int . (!(p >= 0 && p < state.cs.length) || (state.flags[p] == (state.cs[p] >= Gate))));
+assert (state.turn >= -1 && state.turn <= 1);
+assert (externalTurn == 0 || externalTurn == 1);
+
 while (i < steps) invariant (
-    // Valid predicate inlined: state bounds, mutual exclusion, flag consistency, turn bounds
-    (state.cs0 >= Start && state.cs0 <= Exit) &&
-    (state.cs1 >= Start && state.cs1 <= Exit) &&
-    (state.cs0 != Critical || state.cs1 != Critical) &&
-    (state.f0 == (state.cs0 >= Gate)) &&
-    (state.f1 == (state.cs1 >= Gate)) &&
+    // Valid predicate inlined:
+    // Exactly two processes
+    (state.cs.length == 2) &&
+    (state.flags.length == 2) &&
+    // Both processes in valid states
+    (forall p: int . (!(p >= 0 && p < state.cs.length) || 
+        (state.cs[p] >= Start && state.cs[p] <= Exit))) &&
+    // Mutual exclusion
+    !(exists p: int . exists q: int . 
+        p != q && (p >= 0 && p < state.cs.length) && (q >= 0 && q < state.cs.length) && state.cs[p] == Critical && state.cs[q] == Critical) &&
+    // Flag consistency
+    (forall p: int . (!(p >= 0 && p < state.cs.length) || 
+        (state.flags[p] == (state.cs[p] >= Gate)))) &&
+    // Turn bounds
     (state.turn >= -1 && state.turn <= 1) &&
-    // Scheduler constraint: externalTurn is always {0, 1}
+    // Scheduler constraint
     (externalTurn == 0 || externalTurn == 1)
 ) {
 
     // Determine which process runs this iteration via environment function
     externalTurn := NextProcess(i);
 
-    // ---- Process 0 transitions (scheduled when externalTurn == 0) ----
+    // ---- Process transitions dispatched by externalTurn ----
     if (externalTurn == 0) {
-        if (state.cs0 == Start) {
-            state := StartToGate(state);
+        if (state.cs[0] == Start) {
+            state := StartToGate(state, 0);
         } else {
-            if (state.cs0 == Gate) {
-                state := GateToWait(state);
+            if (state.cs[0] == Gate) {
+                state := GateToWait(state, 0);
             } else {
-                if (state.cs0 == Wait && (state.turn == 0 || !state.f1)) {
-                    state := WaitToCritical(state);
+                if (state.cs[0] == Wait && 
+                    (state.turn == 0 || !state.flags[1])) {
+                    state := WaitToCritical(state, 0);
                 } else {
-                    if (state.cs0 == Critical) {
-                        state := CriticalToExit(state);
+                    if (state.cs[0] == Critical) {
+                        state := CriticalToExit(state, 0);
                     } else {
-                        if (state.cs0 == Exit) {
-                            state := ExitToStart(state);
+                        if (state.cs[0] == Exit) {
+                            state := ExitToStart(state, 0);
                         } else {
-                            // cs0 == Wait but cannot enter: spin in place
-                            state := WaitToWait(state);
+                            // cs[0] == Wait but cannot enter: spin in place
+                            state := WaitToWait(state, 0);
                         }
                     }
                 }
             }
         }
     } else {
-        // ---- Process 1 transitions (scheduled when externalTurn == 1) ----
-        if (state.cs1 == Start) {
-            state := P1_StartToGate(state);
+        if (state.cs[1] == Start) {
+            state := StartToGate(state, 1);
         } else {
-            if (state.cs1 == Gate) {
-                state := P1_GateToWait(state);
+            if (state.cs[1] == Gate) {
+                state := GateToWait(state, 1);
             } else {
-                if (state.cs1 == Wait && (state.turn == 1 || !state.f0)) {
-                    state := P1_WaitToCritical(state);
+                if (state.cs[1] == Wait && 
+                    (state.turn == 1 || !state.flags[0])) {
+                    state := WaitToCritical(state, 1);
                 } else {
-                    if (state.cs1 == Critical) {
-                        state := P1_CriticalToExit(state);
+                    if (state.cs[1] == Critical) {
+                        state := CriticalToExit(state, 1);
                     } else {
-                        if (state.cs1 == Exit) {
-                            state := P1_ExitToStart(state);
+                        if (state.cs[1] == Exit) {
+                            state := ExitToStart(state, 1);
                         } else {
-                            // cs1 == Wait but cannot enter: spin in place
-                            state := P1_WaitToWait(state);
+                            // cs[1] == Wait but cannot enter: spin in place
+                            state := WaitToWait(state, 1);
                         }
                     }
                 }
