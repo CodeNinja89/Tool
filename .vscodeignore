@@ -1,0 +1,23 @@
+# Only ship the files the extension actually needs:
+#   package.json, language-configuration.json, syntaxes/, README.md
+# Everything below is excluded from the .vsix.
+
+# Editor / VCS
+.vscode/**
+.vscode-test/**
+.git/**
+.gitignore
+.gitattributes
+
+# Project source (not part of the extension)
+core/**
+docs/**
+**/__pycache__/**
+**/*.py
+**/*.pyc
+
+# Dev / packaging cruft
+.vscodeignore
+**/*.vsix
+node_modules/**
+**/.DS_Store

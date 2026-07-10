@@ -1,0 +1,35 @@
+{
+  "name": "tool-language",
+  "displayName": "TOOL Language Support",
+  "description": "Syntax highlighting for the Typed Oracle Oriented Language (TOOL)",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Programming Languages"],
+  "keywords": [
+    "tool",
+    "verification",
+    "formal-methods",
+    "z3",
+    "smt"
+  ],
+  "license": "MIT",
+  "contributes": {
+    "languages": [
+      {
+        "id": "tool",
+        "aliases": ["TOOL", "tool"],
+        "extensions": [".tool"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tool",
+        "scopeName": "source.tool",
+        "path": "./syntaxes/tool.tmLanguage.json"
+      }
+    ]
+  }
+}

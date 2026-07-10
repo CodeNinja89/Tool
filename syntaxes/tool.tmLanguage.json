@@ -1,0 +1,441 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "TOOL",
+  "displayName": "Typed Oracle Oriented Language",
+  "type": "source",
+  "scopeName": "source.tool",
+  "fileTypes": ["tool"],
+  "firstLineMatch": "^%%\\s+(declarations|preconditions|postconditions|program)",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#section-header" },
+    { "include": "#struct-def" },
+    { "include": "#oracle-def" },
+    { "include": "#env-def" },
+    { "include": "#trace-def" },
+    { "include": "#declarations" },
+    { "include": "#quantifiers" },
+    { "include": "#clauses" },
+    { "include": "#statements" },
+    { "include": "#function-call" },
+    { "include": "#support" },
+    { "include": "#types" },
+    { "include": "#literals" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.tool",
+          "match": "//.*$"
+        }
+      ]
+    },
+
+    "section-header": {
+      "patterns": [
+        {
+          "match": "%%(\\s+)(declarations)",
+          "captures": {
+            "1": { "name": "punctuation.definition.section.tool" },
+            "2": { "name": "storage.type.section.declarations.tool keyword.control.section.tool" }
+          }
+        },
+        {
+          "match": "%%(\\s+)(preconditions)",
+          "captures": {
+            "1": { "name": "punctuation.definition.section.tool" },
+            "2": { "name": "storage.type.section.preconditions.tool keyword.control.section.tool" }
+          }
+        },
+        {
+          "match": "%%(\\s+)(postconditions)",
+          "captures": {
+            "1": { "name": "punctuation.definition.section.tool" },
+            "2": { "name": "storage.type.section.postconditions.tool keyword.control.section.tool" }
+          }
+        },
+        {
+          "match": "%%(\\s+)(program)",
+          "captures": {
+            "1": { "name": "punctuation.definition.section.tool" },
+            "2": { "name": "storage.type.section.program.tool keyword.control.section.tool" }
+          }
+        }
+      ]
+    },
+
+    "struct-def": {
+      "begin": "(?x)\n  (?:\\b(linear)\\s+)?\n  \\b(struct)\\s+\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(\\{)",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "storage.type.modifier.linear.tool" },
+        "2": { "name": "storage.type.struct.tool" },
+        "3": { "name": "entity.name.type.struct.tool" },
+        "4": { "name": "punctuation.curlybrace.open.tool" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.curlybrace.close.tool" }
+      },
+      "name": "meta.struct.tool",
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "match": "(?x)\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(:)\\s*\n  (seq\\s*\\[[^\\]]+\\]|[a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(;)",
+          "captures": {
+            "1": { "name": "variable.other.field.tool" },
+            "2": { "name": "punctuation.separator.colon.tool" },
+            "3": { "name": "storage.type.tool" },
+            "4": { "name": "punctuation.terminator.tool" }
+          }
+        }
+      ]
+    },
+
+    "oracle-def": {
+      "begin": "(?x)\n  \\b(oracle)\\s+\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(\\()",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "storage.type.oracle.tool" },
+        "2": { "name": "entity.name.function.oracle.tool" },
+        "3": { "name": "punctuation.paren.open.tool" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.curlybrace.close.tool" }
+      },
+      "name": "meta.oracle.tool",
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#oracle-params" },
+        { "include": "#oracle-body" }
+      ]
+    },
+
+    "oracle-params": {
+      "patterns": [
+        {
+          "match": "\\b(refer)\\b",
+          "name": "storage.type.modifier.refer.tool"
+        },
+        {
+          "match": "(?x)\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(:)",
+          "captures": {
+            "1": { "name": "variable.parameter.oracle.tool" },
+            "2": { "name": "punctuation.separator.colon.tool" }
+          }
+        }
+      ]
+    },
+
+    "oracle-body": {
+      "patterns": [
+        {
+          "match": "\\b(assumes)\\b",
+          "name": "keyword.control.assumes.tool"
+        },
+        {
+          "match": "\\b(returns)\\b",
+          "name": "keyword.control.returns.tool"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": { "0": { "name": "punctuation.paren.open.tool" } },
+          "endCaptures": { "0": { "name": "punctuation.paren.close.tool" } },
+          "patterns": [
+            { "include": "$self" }
+          ]
+        },
+        {
+          "begin": "\\{",
+          "end": "(?=\\})",
+          "beginCaptures": { "0": { "name": "punctuation.curlybrace.open.tool" } },
+          "patterns": [
+            { "include": "$self" }
+          ]
+        }
+      ]
+    },
+
+    "env-def": {
+      "begin": "(?x)\n  \\b(env)\\s+\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(\\()",
+      "end": ";",
+      "beginCaptures": {
+        "1": { "name": "storage.type.env.tool" },
+        "2": { "name": "entity.name.function.env.tool" },
+        "3": { "name": "punctuation.paren.open.tool" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.terminator.tool" }
+      },
+      "name": "meta.env.tool",
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "match": "->",
+          "name": "keyword.operator.arrow.tool"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": { "0": { "name": "punctuation.paren.open.tool" } },
+          "endCaptures": { "0": { "name": "punctuation.paren.close.tool" } },
+          "patterns": [ { "include": "$self" } ]
+        }
+      ]
+    },
+
+    "trace-def": {
+      "begin": "(?x)\n  \\b(trace)\\s+\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(\\()",
+      "end": "\\}",
+      "beginCaptures": {
+        "1": { "name": "storage.type.trace.tool" },
+        "2": { "name": "entity.name.function.trace.tool" },
+        "3": { "name": "punctuation.paren.open.tool" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.curlybrace.close.tool" }
+      },
+      "name": "meta.trace.tool",
+      "patterns": [
+        { "include": "#comments" },
+        {
+          "match": "\\b(init|step)\\b",
+          "name": "keyword.control.trace.tool"
+        },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": { "0": { "name": "punctuation.paren.open.tool" } },
+          "endCaptures": { "0": { "name": "punctuation.paren.close.tool" } },
+          "patterns": [ { "include": "$self" } ]
+        },
+        {
+          "begin": "\\{",
+          "end": "(?=\\})",
+          "beginCaptures": { "0": { "name": "punctuation.curlybrace.open.tool" } },
+          "patterns": [ { "include": "$self" } ]
+        }
+      ]
+    },
+
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(const)\\b",
+          "name": "storage.type.const.tool"
+        },
+        {
+          "match": "\\b(invisible)\\b",
+          "name": "storage.type.invisible.tool"
+        },
+        {
+          "match": "(?x)\n  ([a-zA-Z_][a-zA-Z0-9_]*)\n  \\s*(:)",
+          "captures": {
+            "1": { "name": "variable.other.declaration.tool" },
+            "2": { "name": "punctuation.separator.colon.tool" }
+          }
+        }
+      ]
+    },
+
+    "quantifiers": {
+      "patterns": [
+        {
+          "match": "\\b(forall|exists)\\b",
+          "name": "keyword.control.quantifier.tool"
+        }
+      ]
+    },
+
+    "clauses": {
+      "patterns": [
+        {
+          "match": "\\b(assumes)\\b",
+          "name": "keyword.control.assumes.tool"
+        },
+        {
+          "match": "\\b(returns)\\b",
+          "name": "keyword.control.returns.tool"
+        }
+      ]
+    },
+
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "name": "entity.name.function.call.tool"
+        }
+      ]
+    },
+
+    "support": {
+      "patterns": [
+        {
+          "match": "(?<=\\.)\\b(length)\\b",
+          "name": "support.variable.property.builtin.tool"
+        }
+      ]
+    },
+
+    "statements": {
+      "patterns": [
+        {
+          "match": "\\b(if)\\b",
+          "name": "keyword.control.if.tool"
+        },
+        {
+          "match": "\\b(else)\\b",
+          "name": "keyword.control.else.tool"
+        },
+        {
+          "match": "\\b(while)\\b",
+          "name": "keyword.control.while.tool"
+        },
+        {
+          "match": "\\b(invariant)\\b",
+          "name": "keyword.control.invariant.tool"
+        },
+        {
+          "match": "\\b(assert)\\b",
+          "name": "keyword.control.assert.tool"
+        },
+        {
+          "match": "\\b(fact)\\b",
+          "name": "keyword.control.fact.tool"
+        }
+      ]
+    },
+
+    "types": {
+      "patterns": [
+        {
+          "match": "\\b(u?int[0-9]*|bool|timestep)\\b",
+          "name": "storage.type.built-in.tool"
+        },
+        {
+          "match": "\\b(seq)\\s*(\\[)",
+          "captures": {
+            "1": { "name": "storage.type.sequence.tool" },
+            "2": { "name": "punctuation.squarebracket.open.tool" }
+          }
+        }
+      ]
+    },
+
+    "literals": {
+      "patterns": [
+        {
+          "match": "\\b(true)\\b",
+          "name": "constant.language.boolean.true.tool"
+        },
+        {
+          "match": "\\b(false)\\b",
+          "name": "constant.language.boolean.false.tool"
+        },
+        {
+          "match": "\\b(null)\\b",
+          "name": "constant.language.null.tool"
+        },
+        {
+          "match": "\\b[0-9]+\\b",
+          "name": "constant.numeric.integer.tool"
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        {
+          "match": ":=",
+          "name": "keyword.operator.assignment.tool"
+        },
+        {
+          "match": "->",
+          "name": "keyword.operator.arrow.tool"
+        },
+        {
+          "match": "(==|!=|<=|>=)",
+          "name": "keyword.operator.comparison.tool"
+        },
+        {
+          "match": "([<>])(?!=)",
+          "name": "keyword.operator.comparison.tool"
+        },
+        {
+          "match": "(&&|\\|\\|)",
+          "name": "keyword.operator.logical.tool"
+        },
+        {
+          "match": "(!)(?![=])",
+          "name": "keyword.operator.logical.tool"
+        },
+        {
+          "match": "(<<|>>)",
+          "name": "keyword.operator.bitwise.shift.tool"
+        },
+        {
+          "match": "(&)(?![&])",
+          "name": "keyword.operator.bitwise.and.tool"
+        },
+        {
+          "match": "(\\|)(?!\\|)",
+          "name": "keyword.operator.bitwise.or.tool"
+        },
+        {
+          "match": "\\^",
+          "name": "keyword.operator.bitwise.xor.tool"
+        },
+        {
+          "match": "~",
+          "name": "keyword.operator.bitwise.not.tool"
+        },
+        {
+          "match": "(\\+|-|\\*|/|%)",
+          "name": "keyword.operator.arithmetic.tool"
+        },
+        {
+          "match": "\\?",
+          "name": "keyword.operator.ternary.question.tool"
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "match": "[{}]",
+          "name": "punctuation.curlybrace.tool"
+        },
+        {
+          "match": "[()]",
+          "name": "punctuation.paren.tool"
+        },
+        {
+          "match": "[\\[\\]]",
+          "name": "punctuation.squarebracket.tool"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.tool"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.tool"
+        },
+        {
+          "match": "\\.(?![0-9])",
+          "name": "punctuation.access.dot.tool"
+        },
+        {
+          "match": ":(?!=)",
+          "name": "punctuation.separator.colon.tool"
+        }
+      ]
+    }
+  }
+}
