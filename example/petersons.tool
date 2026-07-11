@@ -123,14 +123,21 @@ oracle InitState(dummy: int) -> s: PetersonState {
              (s.flags.length == 2);
 }
 
+oracle NextProcess(step: int) -> p: int {
+    returns p == 0 || p == 1;
+}
+
 // --- Scheduler env function ---
 // Picks which process runs next; constrained to {0, 1} by invariant.
-env NextProcess(time: int) -> p: int;
+// env NextProcess(time: int) -> p: int;
 
 // --- Global variables ---
 state: PetersonState;
 externalTurn: int;
 i: int;
+x: int;
+counta: int;
+countb: int;
 steps: int;
 
 %% preconditions
@@ -144,13 +151,16 @@ Exit == 4;
 // Initial state is constructed by InitState oracle before the loop.
 externalTurn == 0;
 i == 0;
-steps == 10;
+counta == 0;
+countb == 0;
+x == 0;
+steps == 100;
 
 %% postconditions
 
 // Mutual exclusion holds after the simulation:
 // it is impossible for both processes to be in Critical.
-!(state.cs[0] == Critical && state.cs[1] == Critical);
+!(state.cs[0] == Critical && state.cs[1] == Critical) && (x == counta + countb);
 
 %% program
 
@@ -181,7 +191,8 @@ while (i < steps) invariant (
     // Turn bounds
     (state.turn >= -1 && state.turn <= 1) &&
     // Scheduler constraint
-    (externalTurn == 0 || externalTurn == 1)
+    (externalTurn == 0 || externalTurn == 1) && 
+    (x == counta + countb)
 ) {
 
     // Determine which process runs this iteration via environment function
@@ -200,6 +211,8 @@ while (i < steps) invariant (
                     state := WaitToCritical(state, 0);
                 } else {
                     if (state.cs[0] == Critical) {
+                        counta := counta + 1;
+                        x := x + 1;
                         state := CriticalToExit(state, 0);
                     } else {
                         if (state.cs[0] == Exit) {
@@ -224,6 +237,9 @@ while (i < steps) invariant (
                     state := WaitToCritical(state, 1);
                 } else {
                     if (state.cs[1] == Critical) {
+                        //I would expect commenting out the next line to break things but it doesn't?
+                        countb := countb+1;
+                        x := x + 1;
                         state := CriticalToExit(state, 1);
                     } else {
                         if (state.cs[1] == Exit) {
