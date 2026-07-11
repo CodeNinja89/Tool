@@ -127,6 +127,38 @@ oracle NextProcess(step: int) -> p: int {
     returns p == 0 || p == 1;
 }
 
+struct Stack {
+    val: int;
+    next: Stack;
+}
+
+// 1. The Push Contract
+// Pushing an element creates a stack where 'val' is the element, and 'next' is the old stack.
+
+oracle push(old_stack: Stack, element: int) -> new_stack: Stack {
+    // A pushed stack is NEVER null, and its fields match the inputs
+    returns (new_stack != null) && (new_stack.val == element) && (new_stack.next == old_stack);
+}
+
+// 2. The Peek (Value) Contract
+// Popping returns the value at the top of the stack.
+oracle peek(s: Stack) -> v: int {
+    assumes s != null;
+    returns v == s.val;
+}
+
+// 3. The Pop (State) Contract
+// Popping also returns the rest of the stack underneath.
+
+oracle pop(s: Stack) -> rest: Stack {
+    assumes s != null;
+    returns rest == s.next;
+}
+
+oracle length(s: Stack) -> l: int {
+    returns l == (s == null ? 0 : 1 + length(s.next));
+}
+
 // --- Scheduler env function ---
 // Picks which process runs next; constrained to {0, 1} by invariant.
 // env NextProcess(time: int) -> p: int;
@@ -139,6 +171,8 @@ x: int;
 counta: int;
 countb: int;
 steps: int;
+astack: Stack;
+bstack: Stack;
 
 %% preconditions
 
@@ -147,6 +181,8 @@ Gate == 1;
 Wait == 2;
 Critical == 3;
 Exit == 4;
+astack == null;
+bstack == null;
 
 // Initial state is constructed by InitState oracle before the loop.
 externalTurn == 0;
@@ -192,6 +228,8 @@ while (i < steps) invariant (
     (state.turn >= -1 && state.turn <= 1) &&
     // Scheduler constraint
     (externalTurn == 0 || externalTurn == 1) && 
+    (counta == length(astack)) &&
+    (countb == length(bstack)) &&
     (x == counta + countb)
 ) {
 
@@ -211,6 +249,7 @@ while (i < steps) invariant (
                     state := WaitToCritical(state, 0);
                 } else {
                     if (state.cs[0] == Critical) {
+                        astack := push(astack, i);
                         counta := counta + 1;
                         x := x + 1;
                         state := CriticalToExit(state, 0);
@@ -238,7 +277,8 @@ while (i < steps) invariant (
                 } else {
                     if (state.cs[1] == Critical) {
                         //I would expect commenting out the next line to break things but it doesn't?
-                        countb := countb+1;
+                        bstack := push(bstack, i);
+                        // countb := countb+1;
                         x := x + 1;
                         state := CriticalToExit(state, 1);
                     } else {
