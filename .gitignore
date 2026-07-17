@@ -22,3 +22,5 @@ core/__pycache__/toolTypeChecker.cpython-314.pyc
 core/__pycache__/toolTypes.cpython-314.pyc
 core/__pycache__/toolZ3.cpython-314.pyc
 *.pdf
+generate_tests.py
+generated_task_test.c

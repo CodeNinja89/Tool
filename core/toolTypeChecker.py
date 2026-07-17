@@ -3,7 +3,7 @@ from core.toolTypes import TypeEnvironment
 
 NUMERIC_TYPES = {
     "int",
-    "timestamp"
+    "timestep"
 }
 
 class TypeChecker:
@@ -68,8 +68,9 @@ class TypeChecker:
                 return "bool"
             
             # arithmetic and bitwise operations
+            # arithmetic and bitwise operations
             if expr.op in ['+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>']:
-                if left_type not in NUMERIC_TYPES and right_type not in NUMERIC_TYPES:
+                if left_type not in NUMERIC_TYPES or right_type not in NUMERIC_TYPES:
                     raise Exception(f"Operation {expr.op} cannot be used with non-numeric types")
                 if not self._types_compatible(left_type, right_type):
                     raise Exception(f"Type Error: Operator {expr.op} expects {left_type}")

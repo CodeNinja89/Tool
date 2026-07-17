@@ -13,6 +13,12 @@ class Z3Translator:
         self.var_cache: Dict[str, z3.ExprRef] = {}
         self.func_cache: Dict[str, z3.FuncDeclRef] = {}
 
+        # Oracle definition bookkeeping.
+        # These prevent duplicate RecAddDefinition calls and avoid infinite recursion
+        # while compiling recursive oracle bodies.
+        self.oracle_defs_added = set()
+        self.oracle_defs_in_progress = set()
+
         self._register_structs() # register user-defined structs before anything else.
         self.oracle_manager = OracleManager(self.env)
 
@@ -133,6 +139,45 @@ class Z3Translator:
             elif isinstance(expr.right, VarRef) and expr.right.name == ret_name:
                 return expr.left
         raise Exception(f"Trace block must be formatted as '{ret_name} == <expression>'")
+    
+    def _extract_definition_body(self, expr: Expr, ret_name: str, kind: str = "definition") -> Expr:
+        """
+        Extract the body from a TOOL definition written as:
+
+            ret == body
+
+        or:
+
+            body == ret
+
+        Example:
+            returns ok == !s.acquired || s.owner == 0;
+
+        gives:
+            !s.acquired || s.owner == 0
+        """
+        if isinstance(expr, BinaryExpr) and expr.op == '==':
+            if isinstance(expr.left, VarRef) and expr.left.name == ret_name:
+                return expr.right
+            if isinstance(expr.right, VarRef) and expr.right.name == ret_name:
+                return expr.left
+
+        raise Exception(
+            f"{kind} must be formatted as '{ret_name} == <expression>'"
+        )
+
+    def _translate_isolated_null(self, ret_type: str) -> z3.ExprRef:
+        """
+        Translate a bare TOOL null literal when the expected return type is known.
+        """
+        if ret_type not in self.env.structs:
+            raise Exception(
+                f"Cannot translate bare null for non-struct return type '{ret_type}'"
+            )
+
+        z3_sort = self.get_z3_sort(ret_type)
+        null_constructor = getattr(z3_sort, f"null_{ret_type}")
+        return cast(z3.ExprRef, null_constructor)
 
     def get_z3_var(self, name: str, type_name: str) -> z3.ExprRef:
         # creates or retrieves a specific Z3 variable
@@ -147,6 +192,116 @@ class Z3Translator:
         z3_var = z3.Const(name, z3_sort)
         self.var_cache[name] = z3_var
         return z3_var
+    
+    def _compile_oracle_definition(self, oracle_def: FunctionDef, tc: TypeChecker) -> z3.FuncDeclRef:
+        """
+        Compile a TOOL oracle into a Z3 definition.
+
+        Important:
+        - This is used for both recursive and non-recursive oracles.
+        - Non-recursive oracles must not become uninterpreted functions.
+        - The Z3 function shell is cached before translating the body so that
+        recursive calls inside the body resolve to the same function.
+        """
+        oracle_name = oracle_def.name
+
+        # Already fully defined.
+        if oracle_name in self.oracle_defs_added:
+            return self.func_cache[oracle_name]
+
+        # Recursive call while compiling this oracle body.
+        # Return the existing shell.
+        if oracle_name in self.oracle_defs_in_progress:
+            if oracle_name not in self.func_cache:
+                raise Exception(
+                    f"Internal error: oracle '{oracle_name}' is in progress but has no Z3 shell."
+                )
+            return self.func_cache[oracle_name]
+
+        domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
+        range_sort = self.get_z3_sort(oracle_def.retType)
+
+        # Create the Z3 function shell first.
+        # RecFunction is fine for both recursive and non-recursive definitions.
+        if oracle_name not in self.func_cache:
+            print(f"DEBUG: Compiling TOOL oracle definition for '{oracle_name}'")
+            self.func_cache[oracle_name] = z3.RecFunction(
+                oracle_name,
+                *domain_sorts,
+                range_sort
+            )
+
+        z3_func = self.func_cache[oracle_name]
+
+        returns_expr = None
+        for clause in oracle_def.clauses:
+            if isinstance(clause, Returns):
+                returns_expr = clause.formula
+                break
+
+        if returns_expr is None:
+            raise Exception(f"Oracle '{oracle_name}' is missing a returns clause.")
+
+        body_ast = self._extract_definition_body(
+            returns_expr,
+            oracle_def.retName,
+            kind=f"oracle '{oracle_name}'"
+        )
+
+        self.oracle_defs_in_progress.add(oracle_name)
+
+        MISSING = object()
+        old_env_vars = {}
+        old_cache_vars = {}
+        z3_bound_vars = []
+
+        try:
+            for arg in oracle_def.args:
+                arg_name = arg.name
+                arg_type = arg.typeName
+
+                old_env_vars[arg_name] = self.env.variables.get(arg_name, MISSING)
+                old_cache_vars[arg_name] = self.var_cache.get(arg_name, MISSING)
+
+                self.env.variables[arg_name] = arg_type
+
+                # Use oracle-scoped Z3 names to avoid accidental collisions with
+                # global variables or parameters of other oracle definitions.
+                z3_arg = z3.Const(
+                    f"__{oracle_name}_{arg_name}",
+                    self.get_z3_sort(arg_type)
+                )
+
+                self.var_cache[arg_name] = z3_arg
+                z3_bound_vars.append(z3_arg)
+
+            if isinstance(body_ast, Literal) and body_ast.value == "null":
+                z3_body = self._translate_isolated_null(oracle_def.retType)
+            else:
+                z3_body = self.translate_expr(body_ast, tc)
+
+            z3.RecAddDefinition(z3_func, z3_bound_vars, z3_body)
+
+            self.oracle_defs_added.add(oracle_name)
+            return z3_func
+
+        finally:
+            for arg in oracle_def.args:
+                arg_name = arg.name
+
+                old_env = old_env_vars[arg_name]
+                if old_env is MISSING:
+                    self.env.variables.pop(arg_name, None)
+                else:
+                    self.env.variables[arg_name] = old_env
+
+                old_cache = old_cache_vars[arg_name]
+                if old_cache is MISSING:
+                    self.var_cache.pop(arg_name, None)
+                else:
+                    self.var_cache[arg_name] = old_cache
+
+            self.oracle_defs_in_progress.discard(oracle_name)
     
     def translate_expr(self, expr: ASTNode, tc: TypeChecker) -> z3.ExprRef:
         # recursively translate an AST expressions into a Z3 expression
@@ -353,6 +508,52 @@ class Z3Translator:
                 constructor = dt_sort.constructor(0) 
                 return cast(z3.ExprRef, constructor(*z3_args))
             
+            # --- Builtin: update_seq(seq, index, value) ---
+            if expr.name == "update_seq":
+                if len(expr.args) != 3:
+                    raise Exception("update_seq expects exactly 3 arguments: update_seq(seq, index, value)")
+
+                z3_arr = self.translate_expr(expr.args[0], tc)
+                z3_idx = self.translate_expr(expr.args[1], tc)
+                z3_val = self.translate_expr(expr.args[2], tc)
+
+                return cast(z3.ExprRef, z3.Store(z3_arr, z3_idx, z3_val))
+
+
+            # --- Builtin: mk_seq(default, v0, v1, v2, ...) ---
+            elif expr.name == "mk_seq":
+                if len(expr.args) == 0:
+                    raise Exception("mk_seq requires at least one argument to determine the element type.")
+
+                z3_values = [self.translate_expr(arg, tc) for arg in expr.args]
+
+                ctx = self.z3_ctx
+
+                # First argument is the default value for all indices.
+                default_value = z3_values[0]
+                elem_sort = default_value.sort()
+
+                z3_arr = z3.K(z3.IntSort(ctx=ctx), default_value)
+
+                # Optional remaining arguments initialize indices 0, 1, 2, ...
+                # Example:
+                #   mk_seq(7, 10, 20)
+                # means:
+                #   default 7, index 0 -> 10, index 1 -> 20
+                for i, z3_val in enumerate(z3_values[1:]):
+                    if z3_val.sort() != elem_sort:
+                        raise Exception(
+                            f"mk_seq element at index {i} has sort {z3_val.sort()}, expected {elem_sort}"
+                        )
+
+                    z3_arr = z3.Store(
+                        z3_arr,
+                        z3.IntVal(i, ctx=ctx),
+                        z3_val
+                    )
+
+                return cast(z3.ExprRef, z3_arr)
+            
             if self.env.is_env(expr.name):
                 env_def = self.env.get_envs(expr.name)
                 z3_args = []
@@ -375,10 +576,15 @@ class Z3Translator:
                 return cast(z3.ExprRef, z3_func(*z3_args))
             
             elif self.env.is_oracle(expr.name):
-            
                 oracle_def = self.env.get_oracles(expr.name)
 
-                # translate teh concrete args for THIS specific call
+                if len(expr.args) != len(oracle_def.args):
+                    raise Exception(
+                        f"Oracle {expr.name} expects {len(oracle_def.args)} args, got {len(expr.args)}"
+                    )
+
+                z3_func = self._compile_oracle_definition(oracle_def, tc)
+
                 z3_args = []
                 for i, arg in enumerate(expr.args):
                     if isinstance(arg, Literal) and arg.value == "null":
@@ -388,83 +594,7 @@ class Z3Translator:
                         z3_args.append(cast(z3.ExprRef, null_constructor))
                     else:
                         z3_args.append(self.translate_expr(arg, tc))
-                    
-                    # check if need to compile the function signature
-                    if expr.name not in self.func_cache:
-                        domain_sorts = [self.get_z3_sort(arg.typeName) for arg in oracle_def.args]
-                        range_sort = self.get_z3_sort(oracle_def.retType)
 
-                        if self.oracle_manager.is_recursive(oracle_def):
-                            print(f"DEBUG: Compiling Native Z3 Recursive Function for '{expr.name}'")
-
-                            # When translating the body of a recursive function, the AST translator 
-                            # will eventually hit a FuncCall pointing to itself. If 
-                            # we didn't cache z3_func right now, the translator would try to compile 
-                            # the function again, and again, forever. Caching it early breaks the loop.
-
-                            z3_func = z3.RecFunction(expr.name, *domain_sorts, range_sort)
-                            self.func_cache[expr.name] = z3_func
-
-                            # Extract the Returns clause
-                            returns_expr = None
-                            for clause in oracle_def.clauses:
-                                if isinstance(clause, Returns):
-                                    returns_expr = clause.formula
-                                    break
-                            if not returns_expr:
-                                raise Exception(f"Recursive oracle '{expr.name}' must have a returns clause.")
-                            
-                            # C. Strip the "ret_name ==" from the AST to get the pure functional body
-                            body_ast = None
-                            if isinstance(returns_expr, BinaryExpr) and returns_expr.op == '==':
-                                if isinstance(returns_expr.left, VarRef) and returns_expr.left.name == oracle_def.retName:
-                                    body_ast = returns_expr.right
-                                elif isinstance(returns_expr.right, VarRef) and returns_expr.right.name == oracle_def.retName:
-                                    body_ast = returns_expr.left
-                                    
-                            if not body_ast:
-                                raise Exception(f"Recursive returns clause in '{expr.name}' must be formatted as 'ret_name == <expression>'")
-
-                            # To translate the body, the compiler temporarily injects the formal parameters 
-                            # (like t and x from your BST example) into the global environment. It translates 
-                            # the body (z3_body), and then immediately deletes the variables so they don't 
-                            # leak into the rest of the program.
-                            
-                            z3_bound_vars = []
-                            old_env_vars = {}
-                            old_cache_vars = {}
-                            
-                            for arg in oracle_def.args:
-                                if arg.name in self.env.variables:
-                                    old_env_vars[arg.name] = self.env.variables.get(arg.name)
-                                if arg.name in self.var_cache:
-                                    old_cache_vars[arg.name] = self.var_cache.get(arg.name)
-
-                                self.env.variables[arg.name] = arg.typeName
-                                z3_bound_vars.append(self.get_z3_var(arg.name, arg.typeName))
-
-                            # E. Translate the pure functional body!
-                            z3_body = self.translate_expr(body_ast, tc)
-
-                            # F. Clean up the environment so we don't pollute the global scope
-                            for arg in oracle_def.args:
-                                if arg.name in old_env_vars:
-                                    self.env.variables[arg.name] = old_env_vars[arg.name]
-                                else:
-                                    del self.env.variables[arg.name]
-                                if arg.name in old_cache_vars:
-                                    self.var_cache[arg.name] = old_cache_vars[arg.name]
-                                if arg.name in self.var_cache:
-                                    del self.var_cache[arg.name]
-
-                            # G. Bind the mathematical body to the recursive signature
-                            z3.RecAddDefinition(z3_func, z3_bound_vars, z3_body)
-                        else:
-                            # Standard Uninterpreted Function for non-recursive oracles
-                            self.func_cache[expr.name] = z3.Function(expr.name, *domain_sorts, range_sort)
-                    
-                # 3. Finally, execute the call using the cached function and our translated concrete args
-                z3_func = self.func_cache[expr.name]
                 return cast(z3.ExprRef, z3_func(*z3_args))
         
             elif self.env.is_trace(expr.name):
