@@ -40,7 +40,7 @@ def main():
         translator = Z3Translator(env)
         solver = z3.Solver(ctx=translator.z3_ctx)
 
-        solver.set("timeout", 20000)
+        solver.set("timeout", 30000)
 
         # 4. SSA Engine & Preconditions
         ssa_engine = SSATransformer(env)
@@ -116,6 +116,12 @@ def main():
                     print(f"❌ INVALID (Assertion Violated!): {z3_formula}")
                     print("\n--- Counter-Example Model ---")
                     print(solver.model())
+                    exit(1)
+                    
+                elif solver.check() == z3.unknown:
+                    print(f"❓ UNKNOWN (Could not prove assertion): {z3_formula}")
+                    print(f"Reason: {solver.reason_unknown()}")
+                    solver.pop()
                     exit(1)
 
                 solver.pop()

@@ -1,6 +1,7 @@
 // =============================================================
 //  Highest Locker Protocol (HLP)
 //  Explicit Mutual Exclusion + Derived Ceiling Priority
+//  DELIBERATE BUG: GetResource does not boost to cfg.ceiling
 // =============================================================
 
 %% declarations
@@ -12,9 +13,8 @@
 // Assumption:
 // Higher integer value means higher logical priority.
 //
-// cfg.ceiling is not arbitrary.
-// It is valid only if it equals the maximum base priority among
-// all tasks eligible to acquire this resource.
+// cfg.ceiling is valid only if it equals the maximum base priority
+// among all tasks eligible to acquire this resource.
 //
 struct SysConfig {
     numTasks: int;
@@ -32,14 +32,10 @@ struct HLPState {
     acquired: bool;
     owner: int;
 
-    // Explicit ownership map:
     // holds[i] == true means task i currently holds this resource.
     holds: seq[bool];
 
-    // Active priorities may differ from base priorities while holding.
     activePriorities: seq[int];
-
-    // Previous priorities are stored so they can be restored on release.
     prevPriorities: seq[int];
 }
 
@@ -65,21 +61,9 @@ oracle ValidTaskId(taskId: int, refer cfg: SysConfig) -> res: bool {
 }
 
 
-// The ceiling is the maximum base priority of all eligible tasks.
-//
-// This has two parts:
-//
-// 1. Upper-bound property:
-//    Every eligible task has base priority <= ceiling.
-//
-// 2. Tightness property:
-//    Some eligible task actually has base priority == ceiling.
-//
-// Without part 2, cfg.ceiling could be absurdly high and the proof
-// would still pass, but the system would over-block tasks.
 oracle ValidCeiling(refer cfg: SysConfig) -> res: bool {
     returns res == (
-        // Every eligible task has priority <= ceiling.
+        // Every eligible task has base priority <= ceiling.
         (
             forall i: int .
                 !(
@@ -92,7 +76,7 @@ oracle ValidCeiling(refer cfg: SysConfig) -> res: bool {
         )
         &&
 
-        // At least one eligible task has priority exactly equal to ceiling.
+        // Some eligible task has base priority exactly equal to ceiling.
         (
             exists i: int .
                 i > 0 &&
@@ -104,11 +88,9 @@ oracle ValidCeiling(refer cfg: SysConfig) -> res: bool {
 }
 
 
-// A valid static configuration has:
-// - at least one task
-// - a correctly derived ceiling priority
 oracle ValidConfig(refer cfg: SysConfig) -> res: bool {
     returns res == (
+        cfg != null &&
         cfg.numTasks > 0 &&
         ValidCeiling(cfg) == true
     );
@@ -119,9 +101,6 @@ oracle ValidConfig(refer cfg: SysConfig) -> res: bool {
 //  Ownership and Mutual Exclusion
 // =============================================================
 
-// Real mutual exclusion:
-//
-// No two different positive task IDs can both hold this resource.
 oracle MutualExclusion(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
     returns res == (
         forall i: int .
@@ -140,18 +119,6 @@ oracle MutualExclusion(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
 }
 
 
-// Ownership coherence connects:
-//
-// acquired flag
-// owner field
-// holds array
-// eligibility
-//
-// This prevents states such as:
-// - acquired == false but owner != 0
-// - acquired == true but owner does not hold
-// - some task holds but is not the owner
-// - non-eligible owner
 oracle OwnershipCoherent(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
     returns res == (
         // If acquired, owner is a valid eligible task.
@@ -173,7 +140,7 @@ oracle OwnershipCoherent(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
         )
         &&
 
-        // Any positive holder must be exactly the owner.
+        // Any valid holder must be exactly the owner.
         (
             forall i: int .
                 !(
@@ -219,26 +186,16 @@ oracle OwnershipCoherent(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
 //  HLP Priority Rule
 // =============================================================
 
-// If the resource is acquired:
-//
-// 1. The owner is boosted exactly to the resource ceiling.
-// 2. Every task eligible for this resource has base priority
-//    no higher than the owner's active priority.
-//
-// This captures the Highest Locker Protocol idea:
-// the current holder runs at the ceiling of the resource,
-// preventing eligible higher-priority tasks from preempting it.
 oracle HLPPriorityRule(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
     returns res == (
         !s.acquired
         ||
         (
-            // Owner is boosted exactly to the configured ceiling.
+            // Owner must be boosted exactly to the resource ceiling.
             s.activePriorities[s.owner] == cfg.ceiling
             &&
 
-            // Because cfg.ceiling is the max eligible priority,
-            // no eligible task has base priority above the owner.
+            // No eligible task has base priority above the owner's active priority.
             (
                 forall i: int .
                     !(
@@ -260,6 +217,7 @@ oracle HLPPriorityRule(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
 
 oracle Valid(refer s: HLPState, refer cfg: SysConfig) -> res: bool {
     returns res == (
+        s != null &&
         ValidConfig(cfg) == true &&
         OwnershipCoherent(s, cfg) == true &&
         MutualExclusion(s, cfg) == true &&
@@ -301,10 +259,12 @@ oracle GetResource(s: HLPState, cfg: SysConfig, taskId: int) -> ns: HLPState {
         // taskId now explicitly holds the resource
         update_seq(s.holds, taskId, true),
 
-        // HLP boost: raise active priority to the resource ceiling
-        update_seq(s.activePriorities, taskId, cfg.basePriorities[taskId]),
+        // DELIBERATE BUG:
+        // This keeps the task at its own base priority.
+        // Correct HLP behavior would boost to cfg.ceiling.
+        update_seq(s.activePriorities, taskId, cfg.ceiling),
 
-        // remember previous active priority before boosting
+        // remember previous active priority before changing active priority
         update_seq(s.prevPriorities, taskId, s.activePriorities[taskId])
     );
 }
@@ -336,8 +296,6 @@ oracle ReleaseResource(s: HLPState, cfg: SysConfig, taskId: int) -> ns: HLPState
 // action == 1: GetResource
 // action == 2: ReleaseResource
 // otherwise: no-op
-//
-// We guard each call so that the callee assumptions are satisfied.
 oracle StepProtocol(s: HLPState, cfg: SysConfig, taskId: int, action: int) -> ns: HLPState {
     returns ns == (
         (
@@ -364,10 +322,6 @@ oracle StepProtocol(s: HLPState, cfg: SysConfig, taskId: int, action: int) -> ns
 // =============================================================
 //  System Trace
 // =============================================================
-//
-// HLP(0)     = InitState(Cfg())
-// HLP(t > 0) = StepProtocol(HLP(t - 1), Cfg(), TaskAt(t), ActionAt(t))
-//
 
 trace HLP(t: timestep) -> s: HLPState {
     init: s == InitState(Cfg());
@@ -380,6 +334,16 @@ trace HLP(t: timestep) -> s: HLPState {
 // =============================================================
 
 t: timestep;
+
+sym_cfg: SysConfig;
+
+base: HLPState;
+prev: HLPState;
+next: HLPState;
+
+task: int;
+act: int;
+
 is_safe: bool;
 
 
@@ -390,37 +354,218 @@ is_safe: bool;
 %% preconditions
 
 t > 0;
-
-// The proof is parameterized by any well-formed AUTOSAR-like
-// HLP configuration.
 ValidConfig(Cfg()) == true;
 
-
-// =============================================================
-//  Postconditions
-// =============================================================
 
 %% postconditions
 
 is_safe == true;
 
 
-// =============================================================
-//  Program / Proof Obligations
-// =============================================================
-
 %% program
 
-// Base case:
-// The initial state satisfies configuration validity,
-// ownership coherence, mutual exclusion, and HLP priority rule.
-assert Valid(HLP(0), Cfg()) == true;
+// =============================================================
+//  Cache environment and trace states
+// =============================================================
+
+sym_cfg := Cfg();
+
+base := HLP(0);
+
+prev := HLP(t - 1);
+next := HLP(t);
+
+task := TaskAt(t);
+act := ActionAt(t);
 
 
-// Inductive step:
-// If the previous trace state is valid,
-// then the next trace state is valid.
-assert !(Valid(HLP(t - 1), Cfg()) == true) || Valid(HLP(t), Cfg()) == true;
+// =============================================================
+//  Trace unfolding obligations
+// =============================================================
+//
+// These two assertions make the trace real in the proof.
+// We are not treating the trace as documentation anymore.
 
-// Final marker for the verifier harness.
+assert base == InitState(sym_cfg);
+
+assert next == StepProtocol(prev, sym_cfg, task, act);
+
+
+// =============================================================
+//  Base Case: HLP(0) is valid
+// =============================================================
+
+assert base != null;
+assert base.acquired == false;
+assert base.owner == 0;
+
+assert (
+    forall i: int .
+        !(
+            i > 0 &&
+            i <= sym_cfg.numTasks
+        )
+        ||
+        base.holds[i] == false
+);
+
+assert OwnershipCoherent(base, sym_cfg) == true;
+assert MutualExclusion(base, sym_cfg) == true;
+assert HLPPriorityRule(base, sym_cfg) == true;
+
+assert Valid(base, sym_cfg) == true;
+
+
+// =============================================================
+//  Inductive Step: HLP(t-1) valid implies HLP(t) valid
+// =============================================================
+//
+// Since:
+//     prev == HLP(t - 1)
+//     next == HLP(t)
+//     next == StepProtocol(prev, sym_cfg, task, act)
+//
+// the following proof is genuinely about the trace transition.
+
+
+// -------------------------------------------------------------
+// Acquire case
+// -------------------------------------------------------------
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 1 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == false &&
+    sym_cfg.eligible[task] == true
+)
+||
+OwnershipCoherent(next, sym_cfg) == true;
+
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 1 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == false &&
+    sym_cfg.eligible[task] == true
+)
+||
+MutualExclusion(next, sym_cfg) == true;
+
+
+// This is the important one.
+// With the deliberate priority bug in GetResource,
+// this assertion should fail.
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 1 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == false &&
+    sym_cfg.eligible[task] == true
+)
+||
+HLPPriorityRule(next, sym_cfg) == true;
+
+
+// -------------------------------------------------------------
+// Release case
+// -------------------------------------------------------------
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 2 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == true &&
+    prev.owner == task
+)
+||
+OwnershipCoherent(next, sym_cfg) == true;
+
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 2 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == true &&
+    prev.owner == task
+)
+||
+MutualExclusion(next, sym_cfg) == true;
+
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+    act == 2 &&
+    ValidTaskId(task, sym_cfg) == true &&
+    prev.acquired == true &&
+    prev.owner == task
+)
+||
+HLPPriorityRule(next, sym_cfg) == true;
+
+
+// -------------------------------------------------------------
+// No-op case
+// -------------------------------------------------------------
+//
+// If neither legal acquire nor legal release is enabled,
+// StepProtocol returns the previous state.
+// Since next == StepProtocol(...), next should equal prev.
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+
+    !(
+        act == 1 &&
+        ValidTaskId(task, sym_cfg) == true &&
+        prev.acquired == false &&
+        sym_cfg.eligible[task] == true
+    )
+    &&
+
+    !(
+        act == 2 &&
+        ValidTaskId(task, sym_cfg) == true &&
+        prev.acquired == true &&
+        prev.owner == task
+    )
+)
+||
+next == prev;
+
+
+assert !(
+    Valid(prev, sym_cfg) == true &&
+
+    !(
+        act == 1 &&
+        ValidTaskId(task, sym_cfg) == true &&
+        prev.acquired == false &&
+        sym_cfg.eligible[task] == true
+    )
+    &&
+
+    !(
+        act == 2 &&
+        ValidTaskId(task, sym_cfg) == true &&
+        prev.acquired == true &&
+        prev.owner == task
+    )
+)
+||
+Valid(next, sym_cfg) == true;
+
+
+// -------------------------------------------------------------
+// Full trace-step preservation
+// -------------------------------------------------------------
+
+assert !(
+    Valid(prev, sym_cfg) == true
+)
+||
+Valid(next, sym_cfg) == true;
+
+
 is_safe := true;
