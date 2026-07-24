@@ -259,9 +259,6 @@ oracle GetResource(s: HLPState, cfg: SysConfig, taskId: int) -> ns: HLPState {
         // taskId now explicitly holds the resource
         update_seq(s.holds, taskId, true),
 
-        // DELIBERATE BUG:
-        // This keeps the task at its own base priority.
-        // Correct HLP behavior would boost to cfg.ceiling.
         update_seq(s.activePriorities, taskId, cfg.ceiling),
 
         // remember previous active priority before changing active priority
