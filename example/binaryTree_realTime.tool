@@ -84,7 +84,6 @@ contains(tree_k, v) == true;
 // The trace definition mathematically guarantees bst_trace(0) == null.
 assert is_bst(bst_trace(0)) == true;
 
-
 // ==========================================
 // 2. TEMPORAL & STRUCTURAL INDUCTIVE STEP
 // ==========================================
@@ -108,7 +107,7 @@ tree_k_minus1 := mk_BST(root_val, left_tree, right_tree);
 
 // 2C. Temporal Inductive Hypothesis
 // We assume the trace at time k-1 perfectly matches our explicit structural state
-fact bst_trace(k - 1) == tree_k_minus1;
+fact (bst_trace(k - 1) == null) || (bst_trace(k - 1) == tree_k_minus1);
 
 // 2D. Advance the trace
 // Because k > 0, evaluating the trace at k naturally triggers the 'step' body:
