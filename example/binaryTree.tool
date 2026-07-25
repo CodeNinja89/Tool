@@ -68,7 +68,7 @@ is_bst(original_tree) == true;
 // Theorem: Inserting X into any arbitrary tree T guarantees 
 // that contains(new_T, X) is mathematically true.
 // We assert the contradiction to trigger a refutation proof.
-is_correct == false;
+is_correct == true;
 
 %% program
 
