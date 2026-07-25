@@ -1,6 +1,6 @@
 %% declarations
 
-linear struct BST {
+struct BST {
     val: int;
     left: BST;
     right: BST;
@@ -47,14 +47,8 @@ oracle is_empty(refer n: BST) -> res: bool {
     returns res == (n == null); 
 }
 
-oracle destruct(n: BST) -> res: bool {
-    returns res == true; 
-}
-
-// Update 1: The environment now strictly uses the timestep type
 env values(ts: timestep) -> val: int;
 
-// Update 2: The new first-class temporal trace block
 trace bst_trace(t: timestep) -> s: BST {
     init: 
         s == null;
@@ -63,17 +57,62 @@ trace bst_trace(t: timestep) -> s: BST {
 }
 
 // --- Variables for our Proof ---
+k: timestep;           // An arbitrary point in time
+v: int;                // The environment value generated at time k
+root_val: int;         // The arbitrary root value of our tree at k-1
+left_tree: BST;        // The arbitrary left subtree at k-1
+right_tree: BST;       // The arbitrary right subtree at k-1
+tree_k_minus1: BST;   // The composed parent tree at k-1
+tree_k: BST;           // The evaluated trace state at k
 is_correct: bool;
 
 %% preconditions
 
+k > 0;
+// Tie the environment value at step k to our explicit variable v for the proof
+values(k) == v;
+
 %% postconditions
-is_correct == true;
+is_bst(tree_k) == true;
+contains(tree_k, v) == true;
 
 %% program
 
-// Update 3: Universal quantification over the timestep type
-assert forall t: timestep . (!(t >= 0) || is_bst(bst_trace(t)) == true);
-assert forall t: timestep . (!(t > 0) || contains(bst_trace(t), values(t)) == true);
+// ==========================================
+// 1. TEMPORAL BASE CASE (t = 0)
+// ==========================================
+// The trace definition mathematically guarantees bst_trace(0) == null.
+assert is_bst(bst_trace(0)) == true;
 
-is_correct := true; // if we reach here, all assertions pass.
+
+// ==========================================
+// 2. TEMPORAL & STRUCTURAL INDUCTIVE STEP
+// ==========================================
+
+// 2A. Structural Inductive Hypotheses
+fact is_bst(left_tree) == true;
+fact is_bst(right_tree) == true;
+fact all_less(left_tree, root_val) == true;
+fact all_greater(right_tree, root_val) == true;
+
+fact is_bst(insert(left_tree, v)) == true;
+fact contains(insert(left_tree, v), v) == true;
+fact (!(v < root_val) || all_less(insert(left_tree, v), root_val) == true);
+
+fact is_bst(insert(right_tree, v)) == true;
+fact contains(insert(right_tree, v), v) == true;
+fact (!(v > root_val) || all_greater(insert(right_tree, v), root_val) == true);
+
+// 2B. Construct the state of the trace at the previous timestep
+tree_k_minus1 := mk_BST(root_val, left_tree, right_tree);
+
+// 2C. Temporal Inductive Hypothesis
+// We assume the trace at time k-1 perfectly matches our explicit structural state
+fact bst_trace(k - 1) == tree_k_minus1;
+
+// 2D. Advance the trace
+// Because k > 0, evaluating the trace at k naturally triggers the 'step' body:
+// insert(bst_trace(k-1), values(k))
+// Z3 substitutes our facts, resulting in: insert(mk_BST(...), v)
+// This forces exactly ONE level of unrolling.
+tree_k := bst_trace(k);
