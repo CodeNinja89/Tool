@@ -56,6 +56,9 @@ class SSATransformer:
         if isinstance(node, VarRef):
             if node.name in self.bound_vars:
                 return node
+            if self.env.is_constant(node.name):
+                return node
+            
             return VarRef(self._get_current_name(node.name))
         
         elif isinstance(node, Literal):
