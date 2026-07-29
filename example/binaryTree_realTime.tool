@@ -109,6 +109,8 @@ fact (!(v > root_val) || all_greater(insert(right_tree, v), root_val) == true);
 // 2B. Construct the state of the trace at the previous timestep
 tree_k_minus1 := mk_BST(root_val, left_tree, right_tree);
 
+assert is_bst(tree_k_minus1) == true;
+
 // 2C. Temporal Inductive Hypothesis
 // We assume the trace at time k-1 perfectly matches our explicit structural state
 fact (bst_trace(k - 1) == null) || (bst_trace(k - 1) == tree_k_minus1);

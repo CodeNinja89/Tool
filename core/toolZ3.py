@@ -22,6 +22,44 @@ class Z3Translator:
         self._register_structs() # register user-defined structs before anything else.
         self.oracle_manager = OracleManager(self.env)
 
+    def _inline_oracle_call(self, oracle_def: FunctionDef, actual_args: List[Expr], tc: TypeChecker) -> z3.ExprRef:
+        """
+        Macro-expands a non-recursive oracle at the call site by substituting
+        formal parameters with actual arguments, avoiding Z3 RecFunction axioms.
+        """
+        from core.toolOracles import ASTSubstitutor
+
+        # 1. Map formal parameter names to actual call-site AST expressions
+        sub_map: Dict[str, Expr] = {}
+        for i, formal_arg in enumerate(oracle_def.args):
+            sub_map[formal_arg.name] = actual_args[i]
+
+        # 2. Extract the return expression body from the oracle's 'returns' clause
+        returns_expr = None
+        for clause in oracle_def.clauses:
+            if isinstance(clause, Returns):
+                returns_expr = clause.formula
+                break
+
+        if returns_expr is None:
+            raise Exception(f"Oracle '{oracle_def.name}' is missing a returns clause.")
+
+        body_ast = self._extract_definition_body(
+            returns_expr,
+            oracle_def.retName,
+            kind=f"oracle '{oracle_def.name}'"
+        )
+
+        # 3. Substitute formal parameters with concrete argument expressions
+        substitutor = ASTSubstitutor(sub_map)
+        inlined_ast = substitutor.substitute(body_ast)
+
+        # 4. Handle bare 'null' returns or translate the inlined AST directly
+        if isinstance(inlined_ast, Literal) and inlined_ast.value == "null":
+            return self._translate_isolated_null(oracle_def.retType)
+        else:
+            return self.translate_expr(inlined_ast, tc)
+
     def get_z3_sort(self, type_name: str) -> z3.SortRef:
         # get the Z3 SMT sort from a Tool type
         if type_name in self.sort_cache:
@@ -195,11 +233,9 @@ class Z3Translator:
     
     def _compile_oracle_definition(self, oracle_def: FunctionDef, tc: TypeChecker) -> z3.FuncDeclRef:
         """
-        Compile a TOOL oracle into a Z3 definition.
+        Compile a TOOL recursive oracle into a Z3 definition.
 
         Important:
-        - This is used for both recursive and non-recursive oracles.
-        - Non-recursive oracles must not become uninterpreted functions.
         - The Z3 function shell is cached before translating the body so that
         recursive calls inside the body resolve to the same function.
         """
@@ -582,6 +618,9 @@ class Z3Translator:
                     raise Exception(
                         f"Oracle {expr.name} expects {len(oracle_def.args)} args, got {len(expr.args)}"
                     )
+
+                if not self.oracle_manager.is_recursive(oracle_def):
+                    return self._inline_oracle_call(oracle_def, expr.args, tc)
 
                 z3_func = self._compile_oracle_definition(oracle_def, tc)
 
