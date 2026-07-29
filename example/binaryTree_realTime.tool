@@ -1,6 +1,6 @@
 %% declarations
 
-struct BST {
+linear struct BST {
     val: int;
     left: BST;
     right: BST;
@@ -56,6 +56,10 @@ trace bst_trace(t: timestep) -> s: BST {
         s == insert(bst_trace(t - 1), values(t));
 }
 
+oracle destruct(n: BST) -> res: bool {
+    returns res == true; 
+}
+
 // --- Variables for our Proof ---
 k: timestep;           // An arbitrary point in time
 v: int;                // The environment value generated at time k
@@ -64,7 +68,7 @@ left_tree: BST;        // The arbitrary left subtree at k-1
 right_tree: BST;       // The arbitrary right subtree at k-1
 tree_k_minus1: BST;   // The composed parent tree at k-1
 tree_k: BST;           // The evaluated trace state at k
-is_correct: bool;
+is_freed: bool;
 
 %% preconditions
 
@@ -115,3 +119,6 @@ fact (bst_trace(k - 1) == null) || (bst_trace(k - 1) == tree_k_minus1);
 // Z3 substitutes our facts, resulting in: insert(mk_BST(...), v)
 // This forces exactly ONE level of unrolling.
 tree_k := bst_trace(k);
+
+is_freed := destruct(tree_k_minus1);
+is_freed := destruct(tree_k);

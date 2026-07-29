@@ -234,10 +234,14 @@ class TypeChecker:
                     raise Exception(f"Type Error in Assignment: Cannot assign {rhs_type} to {lhs_type}")
 
         elif isinstance(stmt, AssertStmt):
+            snapshot = self.delta.copy()
             self._assert_type(stmt.formula, "bool", "Assert condition must be boolean.")
+            self.delta = snapshot
 
         elif isinstance(stmt, FactStmt):
+            snapshot = self.delta.copy()
             self._assert_type(stmt.formula, "bool", "Fact condition must be boolean.")
+            self.delta = snapshot
 
         elif isinstance(stmt, BlockStmt):
             for s in stmt.statements:
