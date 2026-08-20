@@ -61,14 +61,15 @@ left_tree: BST;        // The arbitrary left subtree
 right_tree: BST;       // The arbitrary right subtree
 original_tree: BST;    // The composed parent tree
 new_tree: BST;         // The resulting tree after insertion
+is_correct: bool;
 
 %% preconditions
 base_tree == null;
+is_correct == true;
 
 %% postconditions
 
-is_bst(new_tree) == true;
-contains(new_tree, v) == true;
+is_correct == true;
 
 %% program
 
@@ -106,3 +107,8 @@ original_tree := mk_BST(root_val, left_tree, right_tree);
 
 // 2C. THE TRANSITION
 new_tree := insert(original_tree, v);
+
+assert is_bst(new_tree) == true;
+assert contains(new_tree, v) == true;
+
+is_correct := true;

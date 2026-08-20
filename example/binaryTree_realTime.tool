@@ -74,6 +74,7 @@ is_freed: bool;
 
 k > 0;
 // Tie the environment value at step k to our explicit variable v for the proof
+forall t: timestep . !(t > 0) || (values(t) != 0);
 values(k) == v;
 
 %% postconditions
