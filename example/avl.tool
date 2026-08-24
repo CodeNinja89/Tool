@@ -152,14 +152,14 @@ assert contains(base_tree, val_to_insert) == true;
 // Notice the logical implications (!(x < val) || ...) to prevent soundness holes!
 
 // -- Left Subtree --
-assert (forall x: int . is_avl(insert_avl(root.left, x)) == true);
-assert (forall x: int . contains(insert_avl(root.left, x), x) == true);
-assert (forall x: int . !(x < root.val) || (all_less(insert_avl(root.left, x), root.val)));
+fact (forall x: int . is_avl(insert_avl(root.left, x)) == true);
+fact (forall x: int . contains(insert_avl(root.left, x), x) == true);
+fact (forall x: int . !(x < root.val) || (all_less(insert_avl(root.left, x), root.val)));
 
 // -- Right Subtree --
-assert (forall x: int . is_avl(insert_avl(root.right, x)) == true);
-assert (forall x: int . contains(insert_avl(root.right, x), x) == true);
-assert (forall x: int . !(x > root.val) || (all_greater(insert_avl(root.right, x), root.val)));
+fact (forall x: int . is_avl(insert_avl(root.right, x)) == true);
+fact (forall x: int . contains(insert_avl(root.right, x), x) == true);
+fact (forall x: int . !(x > root.val) || (all_greater(insert_avl(root.right, x), root.val)));
 
 
 // =============================================================================
