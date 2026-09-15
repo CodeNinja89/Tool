@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Transcript Viewer</title>
+    <style>
+        :root {
+            --bg-color: #f5f7f9;
+            --chat-bg: #ffffff;
+            --user-bg: #007bff;
+            --user-color: #ffffff;
+            --agent-bg: #f1f3f5;
+            --agent-color: #212529;
+            --system-color: #868e96;
+            --thinking-bg: #fdf6e3;
+            --tool-bg: #2b2b2b;
+            --tool-color: #4af626;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            max-width: 900px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        input[type="file"] {
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 2px dashed #007bff;
+            border-radius: 8px;
+            background-color: #e9f2ff;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--chat-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-height: 400px;
+            overflow-y: auto;
+        }
+
+        .message-row {
+            display: flex;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .message-row.user {
+            justify-content: flex-end;
+        }
+
+        .message-row.agent {
+            justify-content: flex-start;
+        }
+
+        .message-row.system {
+            justify-content: center;
+        }
+
+        .bubble-wrapper {
+            max-width: 85%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-row.user .bubble-wrapper {
+            align-items: flex-end;
+        }
+
+        .message-row.agent .bubble-wrapper {
+            align-items: flex-start;
+        }
+
+        .bubble {
+            padding: 14px 18px;
+            border-radius: 18px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            font-size: 15px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            width: fit-content;
+        }
+
+        .message-row.user .bubble {
+            background-color: var(--user-bg);
+            color: var(--user-color);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-row.agent .bubble {
+            background-color: var(--agent-bg);
+            color: var(--agent-color);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-row.system .bubble {
+            background-color: transparent;
+            color: var(--system-color);
+            font-size: 13px;
+            box-shadow: none;
+            text-align: center;
+        }
+
+        .thinking {
+            background-color: var(--thinking-bg);
+            color: #665c00;
+            padding: 10px;
+            border-left: 4px solid #e2c020;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .toggle-header {
+            font-weight: bold;
+            margin-bottom: 5px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .thinking .toggle-header:hover {
+            color: #443d00;
+        }
+
+        .tool-call-wrapper {
+            background-color: var(--tool-bg);
+            color: var(--tool-color);
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        .tool-call-wrapper .toggle-header:hover {
+            color: #88ff66;
+        }
+
+        .content-block {
+            margin-top: 8px;
+        }
+
+        .step-index {
+            font-size: 11px;
+            opacity: 0.7;
+            margin-bottom: 6px;
+            padding: 0 10px;
+        }
+        
+        .toggle-content {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(0,0,0,0.1);
+        }
+        
+        .tool-call-wrapper .toggle-content {
+            border-top: 1px dashed rgba(255,255,255,0.2);
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Antigravity Transcript Viewer</h1>
+        <input type="file" id="transcript-upload" accept=".jsonl" />
+    </header>
+
+    <div id="chat-container">
+        <div class="message-row system">
+            <div class="bubble-wrapper">
+                <div class="bubble">Please upload an Antigravity JSONL transcript file to view the conversation.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('transcript-upload').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split('\n');
+                const chatContainer = document.getElementById('chat-container');
+                chatContainer.innerHTML = ''; // Clear existing chat
+
+                let messageCount = 0;
+
+                lines.forEach(line => {
+                    line = line.trim();
+                    if (!line) return;
+                    
+                    try {
+                        const data = JSON.parse(line);
+                        renderMessage(data, chatContainer);
+                        messageCount++;
+                    } catch (err) {
+                        console.error('Error parsing line:', err, line);
+                    }
+                });
+
+                if (messageCount === 0) {
+                    chatContainer.innerHTML = '<div class="message-row system"><div class="bubble-wrapper"><div class="bubble">No valid JSONL messages found in the file.</div></div></div>';
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function toggleVisibility(element, labelText) {
+            const content = element.nextElementSibling;
+            if (content.style.display === "none") {
+                content.style.display = "block";
+                element.innerHTML = "▼ " + labelText;
+            } else {
+                content.style.display = "none";
+                element.innerHTML = "▶ " + labelText;
+            }
+        }
+
+        function renderMessage(data, container) {
+            const rowDiv = document.createElement('div');
+            rowDiv.classList.add('message-row');
+
+            const bubbleWrap = document.createElement('div');
+            bubbleWrap.classList.add('bubble-wrapper');
+            
+            const stepDiv = document.createElement('div');
+            stepDiv.classList.add('step-index');
+            const dateStr = data.created_at ? new Date(data.created_at).toLocaleString() : 'Unknown time';
+            stepDiv.textContent = `Step ${data.step_index !== undefined ? data.step_index : '?'} | ${dateStr}`;
+            bubbleWrap.appendChild(stepDiv);
+
+            const bubbleDiv = document.createElement('div');
+            bubbleDiv.classList.add('bubble');
+            bubbleWrap.appendChild(bubbleDiv);
+
+            let hasContent = false;
+
+            if (data.source === 'USER_EXPLICIT' || (data.source === 'USER' && data.type === 'USER_INPUT')) {
+                rowDiv.classList.add('user');
+                bubbleDiv.textContent = cleanUserRequest(data.content || '');
+                hasContent = true;
+            } else if (data.source === 'MODEL' && data.type === 'PLANNER_RESPONSE') {
+                rowDiv.classList.add('agent');
+                
+                if (data.thinking) {
+                    const thinkingDiv = document.createElement('div');
+                    thinkingDiv.classList.add('thinking');
+                    
+                    const header = document.createElement('div');
+                    header.classList.add('toggle-header');
+                    header.innerHTML = "▼ Thinking Process";
+                    header.onclick = function() { toggleVisibility(this, 'Thinking Process'); };
+                    thinkingDiv.appendChild(header);
+
+                    const content = document.createElement('div');
+                    content.classList.add('toggle-content');
+                    content.style.display = 'block';
+                    content.textContent = data.thinking;
+                    thinkingDiv.appendChild(content);
+
+                    bubbleDiv.appendChild(thinkingDiv);
+                    hasContent = true;
+                }
+                
+                if (data.content) {
+                    const contentDiv = document.createElement('div');
+                    contentDiv.classList.add('content-block');
+                    contentDiv.textContent = data.content;
+                    bubbleDiv.appendChild(contentDiv);
+                    hasContent = true;
+                }
+                
+                if (data.tool_calls && data.tool_calls.length > 0) {
+                    data.tool_calls.forEach(tc => {
+                        const tcDiv = document.createElement('div');
+                        tcDiv.classList.add('tool-call-wrapper');
+                        
+                        const header = document.createElement('div');
+                        header.classList.add('toggle-header');
+                        header.innerHTML = "▶ Tool Call: " + tc.name;
+                        header.onclick = function() { toggleVisibility(this, 'Tool Call: ' + tc.name); };
+                        tcDiv.appendChild(header);
+
+                        const content = document.createElement('div');
+                        content.classList.add('toggle-content');
+                        content.style.display = 'none';
+                        content.textContent = JSON.stringify(tc.args, null, 2);
+                        tcDiv.appendChild(content);
+                        
+                        bubbleDiv.appendChild(tcDiv);
+                        hasContent = true;
+                    });
+                }
+                
+                if (!hasContent) {
+                    bubbleDiv.innerHTML = "<em>[Empty response]</em>";
+                    hasContent = true;
+                }
+            } else if (data.source === 'MODEL' && data.type === 'GENERIC') {
+                rowDiv.classList.add('agent');
+                bubbleDiv.textContent = data.content || '[Empty Tool Response / Generic Action]';
+                hasContent = true;
+            } else if (data.source === 'SYSTEM') {
+                rowDiv.classList.add('system');
+                bubbleDiv.textContent = data.content || 'System Update';
+                hasContent = true;
+            }
+
+            if (hasContent) {
+                rowDiv.appendChild(bubbleWrap);
+                container.appendChild(rowDiv);
+            }
+        }
+
+        function cleanUserRequest(content) {
+            let clean = content;
+            if (clean.includes('<USER_REQUEST>')) {
+                const match = clean.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+                if (match && match[1]) {
+                    clean = match[1].trim();
+                }
+            }
+            return clean;
+        }
+    </script>
+</body>
+</html>

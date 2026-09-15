@@ -113,3 +113,5 @@ number: /[0-9]+/
 %ignore WS
 %import common.CPP_COMMENT
 %ignore CPP_COMMENT
+%import common.C_COMMENT
+%ignore C_COMMENT

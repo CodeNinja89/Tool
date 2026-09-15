@@ -114,8 +114,9 @@ def main():
                 
                 solver.add(z3_formula)
                 timeline_facts.append(z3_formula)
+                result = solver.check()
 
-                if solver.check() == z3.unsat:
+                if result == z3.unsat or result == z3.unknown:
                     print("❌ COMPILATION ERROR: Contradictory Mid-Program Fact!")
                     print(f"The statement '{z3_formula}' contradicts the established state of the program up to this point.")
                     print("Mathematically impossible scenario.")
